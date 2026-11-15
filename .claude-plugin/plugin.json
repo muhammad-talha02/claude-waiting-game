@@ -1,6 +1,6 @@
 {
   "name": "runner",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Critter Run, a runner game above the prompt to play while Claude works: jumps and double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel",
   "author": {
     "name": "M Talha",

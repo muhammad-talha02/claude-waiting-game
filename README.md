@@ -90,7 +90,7 @@ Your best score, coins collected over every run, runs played, and the colour you
 
 | | |
 | --- | --- |
-| **🎮 Game on / off** button | In the prompt footer, beside the mode labels |
+| **● Game on / ○ Game off** | A toggle in the prompt footer, beside the mode labels; the dot is green while it's on |
 | `/runner off` | Hide the game |
 | `/runner on` | Show it again |
 | `/runner` | Flip it |

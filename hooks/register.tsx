@@ -59,6 +59,8 @@ async function stats($: EngineInterface): Promise<string> {
 }
 
 const TOGGLE_KEY = 'runner-toggle'
+/** The footer toggle's dot while the game is on. */
+const ON_DOT = '#46A758'
 
 export const register: Register = on => {
   let linger: { cancel: () => void } | null = null
@@ -126,19 +128,22 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A Game on/off button in the prompt footer, beside the mode labels: there
+  // A Game on/off toggle in the prompt footer, beside the mode labels: there
   // whether or not Claude is working, so the game can be turned off ahead of
-  // time. The engine's own labels are kept in front of it.
+  // time. The engine's own labels are kept in front of it. It reads like the
+  // footer's own text: dim words, no emoji, and a status dot, green when on.
   // The footer is the engine's, no plugin's: `plugin: '*'` hears it with no `plugin` on `e`.
   on('ui.render', { component: 'SessionMode', plugin: '*' }, async ($, e, next) => {
     if (e.surface !== 'terminal' && e.surface !== 'desktop') return next(e)
     const isOn = await read($, enabled)
     const engine = await next(e)
-    const { Box, Button } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="row" columnGap={1}>
         {engine}
-        <Button key={TOGGLE_KEY} plain dimColor={!isOn} label={isOn ? '🎮 Game on' : '🎮 Game off'} onPress={() => toggle($)} />
+        <Button key={TOGGLE_KEY} plain dimColor label={isOn ? 'Game on' : 'Game off'} onPress={() => toggle($)}>
+          <Text color={isOn ? ON_DOT : undefined}>{isOn ? '●' : '○'}</Text> {isOn ? 'Game on' : 'Game off'}
+        </Button>
       </Box>
     )
   })

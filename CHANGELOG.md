@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- The footer toggle reads like the footer's own text: no 🎮 emoji, dim words, and a status dot, green **● Game on** or hollow **○ Game off**.
+
 ## 0.6.0
 
 - A simple, developer-friendly look on the desktop: the scenery is gone (sky, sun, moon, stars, clouds, hills, grass and dirt). The game now runs on a plain dark panel like an editor's, with a faint dot grid and one ground line, so only the critter, hazards and coins have colour.

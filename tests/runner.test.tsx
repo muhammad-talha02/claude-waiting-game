@@ -299,11 +299,14 @@ test('the footer button hides the game and shows it again, keeping the mode labe
     const bar = await $.ui.mount({ ...footer(['focus']), surface })
     const game = await $.ui.mount({ ...band(true), surface })
     expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).toContain('Game on')
+    expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).not.toContain('🎮')
+    expect(await bar.find({ type: 'Text', text: '●' })).toBeDefined()
     expect(await bar.find({ type: 'Text', text: 'focus' })).toBeDefined()
     expect(await game.find({ type: 'Client' })).toBeDefined()
 
     await bar.press({ key: 'runner-toggle' })
     expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).toContain('Game off')
+    expect(await bar.find({ type: 'Text', text: '○' })).toBeDefined()
     await game.redraw()
     expect(await game.find({ type: 'Client' })).toBeUndefined()
 
