@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- An easier-on-the-eyes desktop scene: a deep, muted sky (steel blue by day, plum at dusk, navy at night) in place of the pale one, darker hills and earth, softer clouds and sun, and a smoother sky gradient.
+- Rocks, boulders, crystals and the high blue bug are brighter, so they stand out against the darker sky; hazards cast a firmer shadow.
+- The critter casts a shadow that shrinks as it jumps.
+
 ## 0.4.0
 
 - Renamed the game **Critter Run** and redrew the desktop scene: a sky with a day-night cycle (sun, moon, stars), rolling hills, clouds, grass and dirt, in a rounded card.

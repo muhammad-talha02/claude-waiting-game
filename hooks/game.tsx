@@ -572,15 +572,21 @@ const css = (c: RGB, alpha = 1) => {
 }
 const alpha = (hex: string, a: number) => css(rgb(hex), a)
 
-/** The sky through one day: day, dusk, night, dawn. */
+/**
+ * The sky through one day: day, dusk, night, dawn. Deep, muted colours, so
+ * the band never glares beside the chat and the critter, the hazards and the
+ * coins stand out against it; the day is only a little lighter than the dusk.
+ */
+const DAY_TOP = rgb('#1D4262')
+const DAY_BOTTOM = rgb('#41768F')
 const SKY: readonly { t: number; top: RGB; bottom: RGB; night: number }[] = [
-  { t: 0, top: rgb('#7EC8F0'), bottom: rgb('#D6EFFA'), night: 0 },
-  { t: 0.38, top: rgb('#7EC8F0'), bottom: rgb('#D6EFFA'), night: 0 },
-  { t: 0.47, top: rgb('#E9876C'), bottom: rgb('#FAD39C'), night: 0.15 },
-  { t: 0.56, top: rgb('#141B38'), bottom: rgb('#2D3A67'), night: 1 },
-  { t: 0.86, top: rgb('#141B38'), bottom: rgb('#2D3A67'), night: 1 },
-  { t: 0.94, top: rgb('#F0A88A'), bottom: rgb('#FBE0BC'), night: 0.15 },
-  { t: 1, top: rgb('#7EC8F0'), bottom: rgb('#D6EFFA'), night: 0 },
+  { t: 0, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
+  { t: 0.38, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
+  { t: 0.47, top: rgb('#2C2652'), bottom: rgb('#945860'), night: 0.15 },
+  { t: 0.56, top: rgb('#0D1330'), bottom: rgb('#1C284E'), night: 1 },
+  { t: 0.86, top: rgb('#0D1330'), bottom: rgb('#1C284E'), night: 1 },
+  { t: 0.94, top: rgb('#2A3262'), bottom: rgb('#9A6A66'), night: 0.15 },
+  { t: 1, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
 ]
 
 export function skyAt(dist: number): { top: RGB; bottom: RGB; night: number; t: number } {
@@ -593,11 +599,13 @@ export function skyAt(dist: number): { top: RGB; bottom: RGB; night: number; t: 
       return { top: mix(a.top, b.top, k), bottom: mix(a.bottom, b.bottom, k), night: a.night + (b.night - a.night) * k, t }
     }
   }
-  const first = SKY[0] ?? { top: rgb('#7EC8F0'), bottom: rgb('#D6EFFA'), night: 0 }
+  const first = SKY[0] ?? { top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 }
   return { top: first.top, bottom: first.bottom, night: first.night, t }
 }
 
 const NIGHT = rgb('#0B1026')
+/** The blue bug, light enough to read against the deep sky. */
+const HIGH_BUG = '#86A4FF'
 /** The edge of a see-through disc: none, so its rim is not doubled. */
 const CLEAR = 'rgba(0,0,0,0)'
 
@@ -817,8 +825,9 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       pieces.push(...more)
     }
 
-    // Sky: four bands from the top colour down to the horizon's.
-    for (let i = 0; i < 4; i++) put(px(`sky${i}`, 0, (GROUND / 4) * i, W, GROUND / 4 + 0.2, css(mix(sky.top, sky.bottom, i / 3))))
+    // Sky: bands from the top colour down to the horizon's.
+    const BANDS = 10
+    for (let i = 0; i < BANDS; i++) put(px(`sky${i}`, 0, (GROUND / BANDS) * i, W, GROUND / BANDS + 0.2, css(mix(sky.top, sky.bottom, i / (BANDS - 1)))))
 
     // Stars and the moon at night, the sun by day.
     if (night > 0.05) {
@@ -831,7 +840,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       const k = sky.t / 0.53
       const sx = W * (0.6 - 0.2 * k)
       const sy = 7 + k * k * 28
-      put(px('sunglow', sx - 2.5, sy - 2.5, 12, 12, 'rgba(255,214,90,0.22)', CLEAR), px('sun', sx, sy, 7, 7, '#FFD95A', '#FFC93C'))
+      put(px('sunglow', sx - 2.5, sy - 2.5, 12, 12, 'rgba(255,200,110,0.16)', CLEAR), px('sun', sx, sy, 7, 7, '#F6CF6A', '#E8B24A'))
     } else if (sky.t > 0.52 && sky.t < 0.93) {
       const k = (sky.t - 0.52) / 0.41
       const mx = W * (0.62 - 0.2 * k)
@@ -845,8 +854,8 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       const first = Math.floor(off / period) - 1
       for (let k = first; k <= first + Math.ceil(W / period) + 2; k++) each(`${name}${k}`, k * period - off, k)
     }
-    const farHill = css(mix(mix(rgb('#9DCFA9'), sky.bottom, 0.35), NIGHT, night * 0.6))
-    const nearHill = css(mix(mix(rgb('#74B97C'), sky.bottom, 0.12), NIGHT, night * 0.6))
+    const farHill = css(mix(mix(rgb('#3C7A70'), sky.bottom, 0.35), NIGHT, night * 0.55))
+    const nearHill = css(mix(mix(rgb('#2C6A4C'), sky.bottom, 0.1), NIGHT, night * 0.55))
     // A hill: three rounded steps, wide and low to narrow and high, read as a dome.
     const hill = (key: string, cx: number, w: number, tall: number, color: string) => {
       const base = GROUND + 1
@@ -863,7 +872,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     layer('cloud', 0.22, 95, (key, x, k) => {
       if (noise(k * 2.3) < 0.3) return
       const y = 3 + noise(k * 9.1) * 9
-      const c = `rgba(255,255,255,${(0.85 - 0.68 * night).toFixed(2)})`
+      const c = `rgba(214,228,242,${(0.34 - 0.2 * night).toFixed(2)})`
       put(px(`${key}a`, x, y, 16, 4, c, true), px(`${key}b`, x + 3, y - 2.5, 7, 4.5, c, true), px(`${key}c`, x + 8, y - 1.5, 6, 4, c, true))
     })
     layer('near', 0.3, 48, (key, x, k) => {
@@ -873,13 +882,13 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     })
 
     // Ground: grass on dirt, with specks and tufts going by.
-    put(px('dirt', 0, GROUND + 1.2, W, FIELD_H - GROUND, dim('#A0703F')), px('grass', 0, GROUND, W, 1.6, dim('#62B356')))
+    put(px('dirt', 0, GROUND + 1.2, W, FIELD_H - GROUND, dim('#5A3F2A')), px('grass', 0, GROUND, W, 1.6, dim('#4F9C47')))
     layer('speck', 1, 19, (key, x, k) => {
-      put(px(key, x + noise(k) * 10, GROUND + 3 + noise(k * 2.7) * 3, 1 + noise(k * 1.3), 0.7, dim(noise(k * 5.5) < 0.5 ? '#7E5434' : '#BF8E5E')))
+      put(px(key, x + noise(k) * 10, GROUND + 3 + noise(k * 2.7) * 3, 1 + noise(k * 1.3), 0.7, dim(noise(k * 5.5) < 0.5 ? '#45301F' : '#7A5A3C')))
     })
     layer('tuft', 1, 31, (key, x, k) => {
       if (noise(k * 7.7) < 0.4) return
-      put(px(key, x, GROUND - 0.8, 0.8, 1, dim('#4E9A45')), px(`${key}b`, x + 1.2, GROUND - 1.3, 0.8, 1.5, dim('#4E9A45')))
+      put(px(key, x, GROUND - 0.8, 0.8, 1, dim('#3F8439')), px(`${key}b`, x + 1.2, GROUND - 1.3, 0.8, 1.5, dim('#3F8439')))
     })
 
     // Hazards.
@@ -888,29 +897,29 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       const top = GROUND - y - o.h
       const k = `h${o.id}`
       if (o.kind === 'rock' || o.kind === 'boulder') {
-        const [body, edge, shine] = o.kind === 'rock' ? ['#8F939C', '#6F737C', '#BEC2C9'] : ['#9A7E62', '#765C45', '#C4A787']
+        const [body, edge, shine] = o.kind === 'rock' ? ['#A6ACB8', '#6E7480', '#D8DCE4'] : ['#B58E69', '#7A5B40', '#DEBC96']
         put(
-          px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.18)', true),
-          px(k, o.x, top, o.w, o.h + 0.5, dim(body, 0.45), dim(edge, 0.45)),
-          px(`${k}l`, o.x + 1, top + 1, Math.max(1, o.w * 0.45), 1.4, dim(shine, 0.45), true),
+          px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.3)', true),
+          px(k, o.x, top, o.w, o.h + 0.5, dim(body, 0.35), dim(edge, 0.35)),
+          px(`${k}l`, o.x + 1, top + 1, Math.max(1, o.w * 0.45), 1.4, dim(shine, 0.35), true),
         )
-        if (o.kind === 'boulder') put(px(`${k}c`, o.x + o.w * 0.6, top + 2.5, 0.6, 3, dim('#6E5440', 0.45)))
+        if (o.kind === 'boulder') put(px(`${k}c`, o.x + o.w * 0.6, top + 2.5, 0.6, 3, dim('#6E5440', 0.35)))
       } else if (o.kind === 'crystal') {
         put(
-          px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.18)', true),
-          px(`${k}a`, o.x, top + 3, 3, o.h - 3 + 0.4, '#6C4CCF'),
-          px(`${k}at`, o.x + 0.6, top + 1.8, 1.8, 1.4, '#6C4CCF'),
-          px(`${k}b`, o.x + 3, top + 1.2, 4, o.h - 1.2 + 0.4, '#8E6BF0'),
-          px(`${k}bt`, o.x + 3.8, top - 0.2, 2.4, 1.6, '#8E6BF0'),
-          px(`${k}bl`, o.x + 4.2, top + 1.6, 0.9, o.h - 3, '#C9B8FF'),
-          px(`${k}c`, o.x + 7, top + 2.5, 3, o.h - 2.5 + 0.4, '#7756DD'),
-          px(`${k}ct`, o.x + 7.6, top + 1.4, 1.8, 1.4, '#7756DD'),
+          px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.3)', true),
+          px(`${k}a`, o.x, top + 3, 3, o.h - 3 + 0.4, '#7C5AE8'),
+          px(`${k}at`, o.x + 0.6, top + 1.8, 1.8, 1.4, '#7C5AE8'),
+          px(`${k}b`, o.x + 3, top + 1.2, 4, o.h - 1.2 + 0.4, '#A385FF'),
+          px(`${k}bt`, o.x + 3.8, top - 0.2, 2.4, 1.6, '#A385FF'),
+          px(`${k}bl`, o.x + 4.2, top + 1.6, 0.9, o.h - 3, '#E4DAFF'),
+          px(`${k}c`, o.x + 7, top + 2.5, 3, o.h - 2.5 + 0.4, '#8D6BF4'),
+          px(`${k}ct`, o.x + 7.6, top + 1.4, 1.8, 1.4, '#8D6BF4'),
         )
       } else {
         // A bug, facing the critter, wings beating.
         const high = o.kind === 'bugHigh'
-        const shell = high ? '#5B6FD8' : '#D63E3E'
-        const rim = high ? '#4152AE' : '#A82828'
+        const shell = high ? HIGH_BUG : '#E04848'
+        const rim = high ? '#4F6AD4' : '#A82828'
         const up = Math.floor(s.tick / 3) % 2 === 0
         put(
           px(`${k}w1`, o.x + 2.2, top - (up ? 1.8 : 0.6), 3.2, up ? 2.2 : 1.2, 'rgba(255,255,255,0.75)', true),
@@ -954,6 +963,9 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
         const ny = CRITTER_H + (y + dy - CRITTER_H) * sy
         return px(i === 0 && name === 'shell' ? 'body' : `${name}${i}`, CRITTER_X + nx, top + ny, w * sx, tall * sy, paint[part])
       })
+    // A soft shadow on the ground, smaller and fainter the higher it jumps.
+    const shadowW = Math.max(4, 10 - s.lift * 0.3)
+    put(px('cshadow', CRITTER_X + 6 - shadowW / 2, GROUND - 0.5, shadowW, 1.2, `rgba(0,0,0,${Math.max(0.1, 0.32 - s.lift * 0.012).toFixed(2)})`, true))
     if (s.shield > 0 && !(s.shield < 2 && Math.floor(s.shield * 6) % 2 === 1)) {
       put(px('bubble', CRITTER_X - 2.5, top - 2.5, CRITTER_W + 5, CRITTER_H + 4, 'rgba(143,227,255,0.22)', 'rgba(170,236,255,0.85)'))
     }
@@ -1039,10 +1051,10 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
   for (const o of s.hazards) {
     const k = `h${o.id}`
     if (isBug(o.kind)) {
-      const shell = o.kind === 'bugHigh' ? '#5B6FD8' : '#D63E3E'
+      const shell = o.kind === 'bugHigh' ? HIGH_BUG : '#E04848'
       things.push(cells(`${k}d`, o.x, o.y, 1.5, o.h, '#2A2A33'), cells(k, o.x + 1.5, o.y, o.w - 1.5, o.h, shell))
     } else {
-      things.push(cells(k, o.x, o.y, o.w, o.h, o.kind === 'crystal' ? '#8E6BF0' : o.kind === 'boulder' ? '#9A7E62' : '#8F939C'))
+      things.push(cells(k, o.x, o.y, o.w, o.h, o.kind === 'crystal' ? '#A385FF' : o.kind === 'boulder' ? '#B58E69' : '#A6ACB8'))
     }
   }
   for (const c of s.coins) things.push(glyph(`c${c.id}`, c.x, c.y, '●', '#F5C542'))
