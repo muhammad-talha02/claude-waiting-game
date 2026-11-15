@@ -1,7 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+import type { Engine, Mounted } from 'claude-code/testing'
 
-import { act, CRITTER_W, CRITTER_X, drop, fresh, heightFor, levelFor, OVER_LOCK, pause, SKINS, speedFor, step, unlockedCount, worldFor } from '../hooks/game'
-import type { GameState, Hazard, HazardKind } from '../hooks/game'
+import { act, CRITTER_W, CRITTER_X, drop, fresh, heightFor, levelFor, MAX_DESKTOP_COLUMNS, OVER_LOCK, pause, report, SKINS, speedFor, step, unlockedCount, worldFor } from '../hooks/game'
+import type { GamePost, GameState, Hazard, HazardKind } from '../hooks/game'
 
 const band = (isWorking: boolean) =>
   ({
@@ -162,6 +164,56 @@ test('the level rises every 8 hazards, faster each time; colours unlock with coi
   expect(unlockedCount(1_000_000)).toBe(SKINS.length)
 })
 
+test('the title screen draws again only to blink, about 0.6 times a second on the desktop', () => {
+  for (const world of [DESK, TERM]) {
+    // As the game's clock does: count the frames that bring back the same state.
+    let s = fresh(1)
+    let held = 0
+    let draws = 0
+    const frames = 1600
+    for (let i = 0; i < frames; i++) {
+      const next = step(s, world, held)
+      held = next === s ? held + 1 : 0
+      if (next !== s) draws += 1
+      s = next
+    }
+    // Shut and open again once every 160 frames: two draws.
+    expect(draws).toBe(20)
+    expect(s.tick).toBe(frames)
+  }
+  expect(20 / ((1600 * DESK.tickMs) / 1000)).toBeLessThan(0.7)
+})
+
+test('a paused game stands still; only words on it fade, then nothing is drawn', () => {
+  const run = step(act(fresh(1)), DESK)
+  const paused = { ...pause(run), popups: [{ id: 1, x: CRITTER_X, y: 24, text: 'Mint', color: '#FFFFFF', life: 0.5 }] }
+  let s = paused
+  for (let i = 0; i < 40; i++) s = step(s, DESK)
+  expect(s.popups).toHaveLength(0)
+  expect({ ...s, popups: [] }).toEqual({ ...paused, popups: [] })
+  expect(step(s, DESK)).toBe(s)
+})
+
+test('the desktop field stops at 200 columns; the terminal takes them all', () => {
+  expect(MAX_DESKTOP_COLUMNS).toBe(200)
+  expect(worldFor('desktop', 1000)).toEqual(worldFor('desktop', MAX_DESKTOP_COLUMNS))
+  expect(worldFor('desktop', 120).width).toBeLessThan(worldFor('desktop', 200).width)
+  expect(worldFor('terminal', 300).width).toBeGreaterThan(worldFor('terminal', 200).width)
+})
+
+test('every post after a run ends says so, with the run it was', () => {
+  let s: GameState = { ...act({ ...fresh(5), game: 42 }), skin: 1 }
+  expect(report(s)).toEqual({ game: 42, run: 1, phase: 'run', score: 0, coins: 0, skin: 1 })
+  s = course(s, [rock(60, CRITTER_X + 20)])
+  for (let i = 0; i < 200 && s.phase === 'run'; i++) s = step(s, DESK)
+  expect(report(s)).toMatchObject({ game: 42, run: 1, phase: 'over' })
+  // A colour picked after: the same end, said again.
+  expect(report({ ...s, skin: 0 })).toEqual({ ...report(s), skin: 0 })
+  for (let i = 0; i * DESK.tickMs < OVER_LOCK * 1000 + 40; i++) s = step(s, DESK)
+  expect(report(act(s))).toMatchObject({ game: 42, run: 2, phase: 'run' })
+  expect(report(pause(act(act(s))))).toMatchObject({ run: 2, phase: 'run' })
+})
+
 // ── the band ────────────────────────────────────────────────────────────
 
 test('the band shows the game only while Claude works, on terminal and desktop', async $ => {
@@ -226,8 +278,8 @@ test('a colour picked in the game is kept, and the game draws it', async ($, on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
 
   const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
-  await ui.post({ phase: 'over', score: 3, coins: 40 }, { in: 'waiting-game' })
-  await ui.post({ skin: 1 }, { in: 'waiting-game' })
+  await ui.post({ game: 7, run: 1, phase: 'over', score: 3, coins: 40, skin: null }, { in: 'waiting-game' })
+  await ui.post({ game: 7, run: 1, phase: 'over', score: 3, coins: 40, skin: 1 }, { in: 'waiting-game' })
   const client = await ui.find({ type: 'Client' })
   expect((client?.props.props as { skin?: number; coins?: number } | undefined)?.skin).toBe(1)
   expect((client?.props.props as { skin?: number; coins?: number } | undefined)?.coins).toBe(40)
@@ -317,4 +369,229 @@ test('the footer button hides the game and shows it again, keeping the mode labe
     await bar.unmount()
     await game.unmount()
   }
+})
+
+// ── what the band does for the game ─────────────────────────────────────
+
+const IN = { in: 'waiting-game' } as const
+const startAt = { type: 'down', x: 5, y: 3, button: 'left', in: 'waiting-game' } as const
+/** The game's moving pieces: the ground ticks, the critter, the hazards. */
+const MOVING = /^(tick|body|leg|h)-?\d/
+
+/** The words over the game (a colour's name, "Close! +1"), by their keys. */
+async function wordsOn(ui: Mounted<'desktop', 'AbovePrompt'>) {
+  return (await ui.findAll({ ...IN, type: 'Box' })).filter(b => /^w\d+$/.test(b.key ?? ''))
+}
+
+/** Where the game's pieces whose keys match stand. */
+async function placesOn(ui: Mounted<'desktop', 'AbovePrompt'>, keys: RegExp) {
+  return (await ui.findAll({ ...IN, type: 'Box' }))
+    .filter(b => keys.test(b.key ?? ''))
+    .map(b => [b.key, b.props.marginLeft, b.props.marginTop, b.props.width, b.props.height])
+}
+
+async function startSession($: Engine, on: On, saved: Readonly<Record<string, unknown>> = {}) {
+  const clock = mock.clock(on)
+  mock.store(on, saved)
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  return clock
+}
+
+test('on the title screen the critter still blinks, and nothing else moves', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.advance(DESK.tickMs * 10)
+  expect(await ui.find({ ...IN, key: 'eye3' })).toBeDefined()
+  const open = await ui.drawn(IN)
+  await ui.advance(DESK.tickMs * 100)
+  expect(await ui.drawn(IN)).toEqual(open)
+  // Frame 160: the eyes shut, and open again six frames on.
+  await ui.advance(DESK.tickMs * 52)
+  expect(await ui.find({ ...IN, key: 'eye3' })).toBeUndefined()
+  await ui.advance(DESK.tickMs * 10)
+  expect(await ui.drawn(IN)).toEqual(open)
+  await ui.unmount()
+})
+
+test('C on the title screen or in a pause shows four names at most, and they fade; the paused game stays put', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  for (let i = 0; i < 10; i++) await ui.key({ key: 'c', ...IN })
+  expect(await wordsOn(ui)).toHaveLength(4)
+  await ui.advance(2_000)
+  expect(await wordsOn(ui)).toHaveLength(0)
+
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 30)
+  await ui.key({ key: 'p', ...IN })
+  await ui.advance(DESK.tickMs)
+  const still = await placesOn(ui, MOVING)
+  expect(still.length).toBeGreaterThan(5)
+  for (let i = 0; i < 6; i++) await ui.key({ key: 'c', ...IN })
+  expect(await wordsOn(ui)).toHaveLength(4)
+  await ui.advance(2_000)
+  expect(await wordsOn(ui)).toHaveLength(0)
+  expect(await placesOn(ui, MOVING)).toEqual(still)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Ctrl and Cmd combos are left to the app, not taken as game keys', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.key({ key: ' ', ctrl: true, ...IN })
+  await ui.key({ key: 'c', meta: true, ...IN })
+  await ui.key({ key: 'up', meta: true, ...IN })
+  await ui.advance(DESK.tickMs)
+  expect(await ui.find({ ...IN, text: /Click or Space to start/ })).toBeDefined()
+  expect(await wordsOn(ui)).toHaveLength(0)
+  await ui.key({ key: ' ', ...IN })
+  await ui.advance(DESK.tickMs)
+  expect(await ui.find({ ...IN, text: /Click or Space to start/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a game that failed, or one drawn anew, leaves no run playing, so the band goes once Claude is done', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'terminal' })
+  await ui.resize({ columns: 80, rows: heightFor('terminal'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(TERM.tickMs)
+  await ui.redraw(band(false).props)
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+
+  // It fails mid-run (laid out far wider than any screen, its tree passes the
+  // bounds): no run is left to wait for.
+  await ui.resize({ columns: 150_000, rows: heightFor('terminal'), ...IN }).catch(() => undefined)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Client' }), 'after the fault').toBeUndefined()
+
+  // Claude works again and a run starts; then the game is dropped mid-run (as
+  // when the band has too little room for it), with nothing said.
+  await ui.redraw(band(true).props)
+  await ui.resize({ columns: 80, rows: heightFor('terminal'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(TERM.tickMs)
+  await ui.redraw(band(false).props)
+  expect(await ui.find({ type: 'Client' }), 'mid-run').toBeDefined()
+  await ui.unmount()
+  // Drawn again once Claude is done: the run still seems to be on, so the band
+  // shows a new game, which says nothing is playing, and the band goes.
+  const anew = await $.ui.mount({ ...band(false), surface: 'terminal' })
+  await anew.redraw()
+  expect(await anew.find({ type: 'Client' }), 'after a new game').toBeUndefined()
+  await anew.unmount()
+})
+
+test('a colour picked as a run ends keeps that run, counted once', async ($, on) => {
+  const clock = await startSession($, on, { coins: 40 })
+  const coinsIn = (text: string | undefined) => Number(/(\d+) coins/.exec(text ?? '')?.[1])
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.key({ key: 'c', ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 2000)
+  expect(await ui.find({ ...IN, text: /GAME OVER/ })).toBeDefined()
+  const ended = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
+  expect(ended.text).toContain('1 run')
+  expect(ended.text).toContain('wearing Mint')
+  // C now, with Claude done: its post says the run's end again, which is not
+  // counted twice, and the band still stays its few seconds after the end.
+  await ui.redraw(band(false).props)
+  await ui.key({ key: 'c', ...IN })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  await clock.advance(7_000)
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await ui.unmount()
+  const stats = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
+  expect(stats.text).toContain('1 run')
+  expect(stats.text).toContain('wearing Ember')
+  expect(coinsIn(stats.text)).toBe(coinsIn(ended.text))
+
+  // In the app a post can take the place of one sent earlier in the same
+  // frame: when only the colour's post arrives, the run it ended still
+  // counts, once, however often it comes.
+  const again = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  const late: GamePost = { game: 9, run: 1, phase: 'over', score: 7, coins: 2, skin: 1 }
+  await again.post(late, IN)
+  await again.post(late, IN)
+  await again.post({ ...late, skin: 0 }, IN)
+  await again.post({ ...late, skin: 1 }, IN)
+  await again.unmount()
+  const after = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
+  expect(after.text).toContain('2 runs')
+  expect(after.text).toContain('wearing Mint')
+  expect(coinsIn(after.text)).toBe(coinsIn(stats.text) + 2)
+})
+
+test('holding C saves the colour once it settles, not on every change', async ($, on) => {
+  // A store of the test's own, to see each write.
+  const store = new Map<string, unknown>([['coins', 120]])
+  const saved: unknown[] = []
+  on('store.get', (_, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_, e) => {
+    store.set(e.key, e.value)
+    if (e.key === 'skin') saved.push(e.value)
+    return { value: undefined }
+  })
+  const clock = mock.clock(on)
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  for (let i = 0; i < 8; i++) await ui.key({ key: 'c', ...IN })
+  expect(saved).toEqual([])
+  await clock.advance(1_000)
+  // Eight presses through three colours: Berry.
+  expect(saved).toEqual([2])
+  await ui.unmount()
+  expect((await $.command.run({ command: 'waiting-game', args: 'stats' } as never)).text).toContain('wearing Berry')
+})
+
+test('collapsing the band pauses a run, keeps it, and draws nothing until it opens', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 20)
+  const before = await placesOn(ui, MOVING)
+
+  await ui.redraw({ ...band(true).props, isCollapsed: true })
+  await ui.advance(DESK.tickMs * 200)
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  expect(await ui.find({ ...IN, key: 'ground' })).toBeUndefined()
+  // Keys don't reach a band out of sight.
+  await ui.key({ key: 'p', ...IN })
+
+  await ui.redraw(band(true).props)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+  expect(await placesOn(ui, MOVING)).toEqual(before)
+  await ui.key({ key: 'p', ...IN })
+  await ui.advance(DESK.tickMs * 5)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  expect(await placesOn(ui, MOVING)).not.toEqual(before)
+  await ui.unmount()
+})
+
+test('on a very wide desktop window the field stops at 200 columns, centred, and hazards come in at its edge', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop', props: { ...band(true).props, bodyColumns: 600 } })
+  await ui.resize({ columns: 600, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 100)
+  const outer = await ui.find({ ...IN, type: 'Box' })
+  expect(outer?.props.width).toBe(600)
+  expect(outer?.props.justifyContent).toBe('center')
+  expect((await ui.find({ ...IN, key: 'field' }))?.props.width).toBe(MAX_DESKTOP_COLUMNS)
+  const hazards = (await ui.findAll({ ...IN, type: 'Box' })).filter(b => /^h\d+$/.test(b.key ?? ''))
+  expect(hazards.length).toBeGreaterThan(0)
+  for (const b of hazards) expect(Number(b.props.marginLeft)).toBeLessThan(MAX_DESKTOP_COLUMNS)
+  expect(JSON.stringify(await ui.drawn(IN)).length).toBeLessThan(100_000)
+  await ui.unmount()
 })

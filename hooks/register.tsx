@@ -23,16 +23,25 @@ const RUNS_KEY = 'runs'
 const SKIN_KEY = 'skin'
 /** How long the band stays after a run ends once Claude is done. */
 const LINGER_MS = 6_000
+/** How long the colour waits to be saved: holding C flips it many times a second. */
+const SAVE_SKIN_MS = 1_000
+/** Highest count kept, so a damaged save can't grow without end. */
+const MAX_COUNT = 1_000_000_000
+/** Games whose last counted run is remembered, so an end that comes again is not counted again. */
+const GAMES_KEPT = 8
+
+const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 function isPost(data: unknown): data is GamePost {
   if (!data || typeof data !== 'object') return false
-  const d = data as { phase?: unknown; score?: unknown; coins?: unknown; skin?: unknown }
-  if (d.phase === 'run') return true
-  if (d.phase === 'over') return typeof d.score === 'number' && typeof d.coins === 'number'
-  return d.phase === undefined && typeof d.skin === 'number'
+  const d = data as Partial<Record<keyof GamePost, unknown>>
+  if (d.phase !== 'idle' && d.phase !== 'run' && d.phase !== 'over') return false
+  return isNumber(d.game) && isNumber(d.run) && isNumber(d.score) && isNumber(d.coins) && (d.skin === null || isNumber(d.skin))
 }
 
-const count = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0)
+const count = (n: unknown) => (isNumber(n) && n > 0 ? Math.min(MAX_COUNT, Math.floor(n)) : 0)
+/** A colour's index, kept to the colours there are. */
+const skinOf = (n: unknown) => Math.min(SKINS.length - 1, count(n))
 
 async function setEnabled($: EngineInterface, on: boolean) {
   await update($, enabled, () => on)
@@ -45,6 +54,21 @@ async function toggle($: EngineInterface) {
   const now = await update($, enabled, on => !on)
   if (!now) await update($, playing, () => false)
   await $.store.set(ENABLED_KEY, now)
+}
+
+/** The colour's save, waiting for it to settle. */
+let saveSkin: { cancel: () => void } | null = null
+
+/** A colour picked in the game: worn at once, saved once it settles, as holding C flips it many times a second. */
+async function pickSkin($: EngineInterface, n: number) {
+  const k = skinOf(n)
+  if ((await read($, skin)) === k) return
+  await update($, skin, () => k)
+  saveSkin?.cancel()
+  saveSkin = $.clock.after(SAVE_SKIN_MS, () => {
+    saveSkin = null
+    void $.store.set(SKIN_KEY, k).catch(() => undefined)
+  })
 }
 
 async function stats($: EngineInterface): Promise<string> {
@@ -64,6 +88,25 @@ const ON_DOT = '#46A758'
 
 export const register: Register = on => {
   let linger: { cancel: () => void } | null = null
+  /** For each game, the last run whose end was counted. */
+  const counted = new Map<number, number>()
+
+  const stopLinger = () => {
+    linger?.cancel()
+    linger = null
+  }
+
+  /** Whether this run's end is new: every post after it says it again. */
+  const firstEnd = (game: number, run: number) => {
+    if (run <= (counted.get(game) ?? 0)) return false
+    counted.delete(game)
+    counted.set(game, run)
+    for (const old of counted.keys()) {
+      if (counted.size <= GAMES_KEPT) break
+      counted.delete(old)
+    }
+    return true
+  }
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -72,7 +115,7 @@ export const register: Register = on => {
     if (count(savedBest) > 0) await update($, best, b => Math.max(b, count(savedBest)))
     if (count(savedCoins) > 0) await update($, coins, c => Math.max(c, count(savedCoins)))
     if (count(savedRuns) > 0) await update($, runs, r => Math.max(r, count(savedRuns)))
-    if (typeof savedSkin === 'number') await update($, skin, () => count(savedSkin))
+    if (typeof savedSkin === 'number') await update($, skin, () => skinOf(savedSkin))
     if (typeof savedOn === 'boolean') await update($, enabled, () => savedOn)
     await update($, playing, () => false)
     await $.command.register({
@@ -99,31 +142,41 @@ export const register: Register = on => {
     }
   })
 
+  // Every post is the game's whole picture (GamePost): where it stands first,
+  // then the colour picked, if any.
   on('ui.message', async ($, e, next) => {
     if (e.component !== 'AbovePrompt' || e.element !== 'waiting-game' || !isPost(e.data)) return next(e)
     const data = e.data
-    if ('skin' in data) {
-      const k = count(data.skin)
-      await update($, skin, () => k)
-      await $.store.set(SKIN_KEY, k)
-      return next(e)
-    }
-    linger?.cancel()
-    linger = null
-    if (data.phase === 'run') {
+    if (data.phase === 'idle') {
+      // A new game on its title screen: nothing is being played.
+      stopLinger()
+      await update($, playing, () => false)
+    } else if (data.phase === 'run') {
+      stopLinger()
       await update($, playing, () => true)
-    } else {
+    } else if (firstEnd(data.game, data.run)) {
       const score = count(data.score)
       const top = await update($, best, b => Math.max(b, score))
       if (score > 0 && score >= top) await $.store.set(BEST_KEY, top)
-      const total = await update($, coins, c => c + count(data.coins))
+      const total = await update($, coins, c => Math.min(MAX_COUNT, c + count(data.coins)))
       await $.store.set(COINS_KEY, total)
-      const played = await update($, runs, r => r + 1)
+      const played = await update($, runs, r => Math.min(MAX_COUNT, r + 1))
       await $.store.set(RUNS_KEY, played)
+      stopLinger()
       linger = $.clock.after(LINGER_MS, () => {
         linger = null
         void update($, playing, () => false)
       })
+    }
+    if (data.skin !== null) await pickSkin($, data.skin)
+    return next(e)
+  })
+
+  // A game that failed has stopped: the band no longer waits on its run.
+  on('ui.fault', async ($, e, next) => {
+    if (e.component === 'AbovePrompt' && e.element === 'waiting-game') {
+      stopLinger()
+      await update($, playing, () => false)
     }
     return next(e)
   })
@@ -162,6 +215,8 @@ export const register: Register = on => {
       working: e.props.isWorking,
       columns: e.props.bodyColumns,
       surface: e.surface,
+      // Folded away, the game is still drawn, so a run waits rather than ends.
+      collapsed: e.props.isCollapsed,
     }
     return (
       <Box width="100%">

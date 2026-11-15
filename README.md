@@ -54,6 +54,7 @@ To keep it installed but hide the game, run `/waiting-game off`.
 
 - The game shows only while Claude is working, and stays until a run you're playing ends. If Claude finishes mid-run, a green **✓ Claude is done** chip appears and you can finish the run.
 - Click the game to start. Keys reach it once a click has given it the focus; Esc gives the focus back to the prompt.
+- Collapse the band and a run pauses until you're back; press P, Space or click to go on.
 
 ## Controls
 
@@ -75,7 +76,7 @@ To keep it installed but hide the game, run `/waiting-game off`.
 
 ## Saved between sessions
 
-Your best score, coins collected over every run, runs played, and the colour you picked. Coins unlock colours:
+Your best score, coins collected over every run, runs played, the colour you picked, and whether the game is on or off. Coins unlock colours:
 
 | Colour | Coins |
 | --- | --- |
@@ -101,7 +102,7 @@ Your best score, coins collected over every run, runs played, and the colour you
 ## Where it runs
 
 - **Terminal**: in the fullscreen layout, drawn in whole character cells, 7 rows tall.
-- **Claude desktop app** (Code tab): drawn on a fine pixel grid, 6 rows tall.
+- **Claude desktop app** (Code tab): drawn on a fine pixel grid, 6 rows tall and up to 200 columns wide (centred in a wider window).
 - **Not on mobile.** With less room than the band needs, it stays hidden.
 
 ## Development

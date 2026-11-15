@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1
+
+- Lighter on the desktop app: the title screen redraws only when the critter blinks, the faint dot grid is gone, and on a very wide window the playing field stops at 200 columns, centred.
+- Collapsing the band pauses a run, and nothing is redrawn until it opens again.
+- Colour names from pressing C fade out on the title and pause screens too, four at most.
+- A run's score, coins and count are kept when C is pressed the moment it ends, and never counted twice. The game no longer stays above the prompt after Claude is done when it was hidden or failed mid-run.
+- Ctrl and Cmd shortcuts are no longer taken as game keys.
+- Holding C no longer saves the colour on every change; saved numbers are kept to sensible limits.
+
 ## 0.7.0
 
 - Renamed **Claude Waiting Game** (it was Critter Run). The plugin is now `waiting-game`, its marketplace `claude-waiting-game`, and `/waiting-game` takes the place of `/runner`. The start screen reads CLAUDE WAITING GAME.

@@ -2,8 +2,13 @@ import type { ClientModule, ClientSurface, RenderElement } from 'claude-code'
 
 // The game itself: a surface module that runs on the drawing side, with its
 // own frame clock and its own clicks and keys, so playing never waits on the
-// hooks module or on Claude. It posts only when a run starts or ends, and
-// when the critter's colour is changed.
+// hooks module or on Claude. It posts only when it is first drawn, when a run
+// starts or ends, and when the critter's colour is changed; each post says
+// where the game stands, all of it (GamePost).
+//
+// A screen where nothing moves (the title, a pause, a settled game over, a
+// folded band) draws again only when something on it changes: a blink, words
+// fading out.
 //
 // The world is measured in sprite pixels: x from the field's left edge, and
 // heights above the ground line. The desktop app draws it on a fine grid: a
@@ -24,6 +29,8 @@ export type GameProps = {
   working: boolean
   columns: number
   surface: Surface
+  /** Whether the band is folded away: a run waits, and nothing is drawn. */
+  collapsed: boolean
 }
 export type HazardKind = 'rock' | 'boulder' | 'crystal' | 'bugLow' | 'bugMid' | 'bugHigh'
 export type Hazard = {
@@ -72,7 +79,7 @@ export type GameState = {
   /** Seconds left of the level banner. */
   banner: number
   tick: number
-  /** Pixels run so far: drives the legs, the ground ticks and the dot grid. */
+  /** Pixels run so far: drives the legs and the ground ticks. */
   dist: number
   seed: number
   /** Pixels of clear ground before the next hazard. */
@@ -87,8 +94,28 @@ export type GameState = {
   unlocked: string
   /** A colour picked here and not yet back from the hooks module. */
   skin: number | null
+  /** This game, so the hooks module never takes another's runs for its own. */
+  game: number
+  /** Runs started in this game: the number of the one on screen. */
+  run: number
 }
-export type GamePost = { phase: 'run' } | { phase: 'over'; score: number; coins: number } | { skin: number }
+/**
+ * What the game tells the hooks module, the same whole picture in every post:
+ * a later post in the same frame replaces an earlier one, so nothing may be
+ * only in one. A run is named by `game` and `run`, so an end that comes again
+ * (with a colour picked after it) is counted once.
+ */
+export type GamePost = {
+  game: number
+  run: number
+  /** The title screen, a run (paused or not), or a lost run. */
+  phase: 'idle' | 'run' | 'over'
+  /** The run's score and coins so far: what it scored, once it is over. */
+  score: number
+  coins: number
+  /** A colour picked here, or null. */
+  skin: number | null
+}
 export type World = { width: number; tickMs: number }
 export type Skin = { name: string; at: number; body: string; shade: string; light: string }
 
@@ -127,6 +154,12 @@ const ORB_CHANCE = 0.14
 const SKY_COIN_Y = 29
 const LEVEL_EVERY = 8
 const MAX_PARTICLES = 40
+/** Words on screen at once: older ones give way. */
+const MAX_POPUPS = 4
+/** The critter blinks every this many frames, its eyes shut for the first few. */
+const BLINK_EVERY = 160
+const BLINK_FOR = 6
+const blinking = (tick: number) => tick % BLINK_EVERY < BLINK_FOR
 
 export const speedFor = (cleared: number) => Math.min(190, 75 + cleared * 2.2)
 export const levelFor = (cleared: number) => 1 + Math.floor(cleared / LEVEL_EVERY)
@@ -149,11 +182,23 @@ const PY = PX / 2.47
 const EPS = 0.04
 /** Terminal: pixels per column. */
 const TX = 1.5
+/**
+ * Desktop: the field is at most this wide, centred in a wider band, so even
+ * the busiest frame on a very wide window stays well inside what a surface
+ * module may draw.
+ */
+export const MAX_DESKTOP_COLUMNS = 200
 
 export const heightFor = (surface: Surface) => (surface === 'desktop' ? 6 : 7)
 
-export function worldFor(surface: Surface, columns: number): World {
+/** The columns the field takes: all of them on the terminal, up to the cap on the desktop. */
+export const fieldColumns = (surface: Surface, columns: number) => {
   const cols = Math.max(24, columns)
+  return surface === 'desktop' ? Math.min(cols, MAX_DESKTOP_COLUMNS) : cols
+}
+
+export function worldFor(surface: Surface, columns: number): World {
+  const cols = fieldColumns(surface, columns)
   return surface === 'desktop' ? { width: Math.floor(cols / PX), tickMs: 20 } : { width: Math.floor(cols * TX), tickMs: 50 }
 }
 
@@ -202,6 +247,8 @@ export function fresh(seed: number): GameState {
     newBest: false,
     unlocked: '',
     skin: null,
+    game: 0,
+    run: 0,
   }
 }
 
@@ -318,11 +365,26 @@ const SPARK = '#FFE27A'
 const SHIELD_FX = '#8FE3FF'
 const MAGNET_FX = '#FF8A80'
 
-/** One frame: the run moves on, a lost run settles; idle and paused wait. */
-export function step(s: GameState, world: World): GameState {
+/**
+ * One frame: the run moves on, a lost run settles; the title screen and a
+ * pause wait. Where nothing on screen changes this frame, the same state comes
+ * back, so nothing is drawn again.
+ *
+ * `held` is how many frames have already gone by on this same state with
+ * nothing to show: the title screen keeps time by it, to blink on cue.
+ */
+export function step(s: GameState, world: World, held = 0): GameState {
   const dt = world.tickMs / 1000
-  if (s.phase === 'paused') return s
-  if (s.phase === 'idle') return { ...s, tick: s.tick + 1 }
+  if (s.phase === 'paused') {
+    // Paused, the game stands still; only words on screen fade out.
+    return s.popups.length === 0 ? s : { ...s, popups: rise(s.popups, dt) }
+  }
+  if (s.phase === 'idle') {
+    // The title: a new frame only to blink, or while words fade out.
+    const tick = s.tick + held + 1
+    if (s.popups.length === 0 && blinking(tick) === blinking(s.tick)) return s
+    return { ...s, tick, popups: rise(s.popups, dt) }
+  }
   if (s.phase === 'over') {
     if (s.overT >= OVER_LOCK && s.particles.length === 0 && s.popups.length === 0) return s
     return { ...s, tick: s.tick + 1, overT: s.overT + dt, particles: fly(s.particles, dt), popups: rise(s.popups, dt) }
@@ -498,7 +560,7 @@ export function step(s: GameState, world: World): GameState {
     coins,
     orbs,
     particles: fx.length > MAX_PARTICLES ? fx.slice(fx.length - MAX_PARTICLES) : fx,
-    popups: popups.slice(-4),
+    popups: popups.slice(-MAX_POPUPS),
     score,
     cleared,
     coinsRun,
@@ -520,7 +582,7 @@ export function step(s: GameState, world: World): GameState {
 export type StartContext = { best: number; coins: number }
 
 function start(s: GameState, ctx: StartContext): GameState {
-  return { ...fresh(s.seed + s.tick + 1), phase: 'run', bestAtStart: ctx.best, coinsAtStart: ctx.coins, skin: s.skin }
+  return { ...fresh(s.seed + s.tick + 1), phase: 'run', bestAtStart: ctx.best, coinsAtStart: ctx.coins, skin: s.skin, game: s.game, run: s.run + 1 }
 }
 
 /** A click, Space or ↑: start a run, jump, jump again in the air, or resume. */
@@ -559,6 +621,11 @@ export function pause(s: GameState): GameState {
   return s.phase === 'run' ? { ...s, phase: 'paused' } : s.phase === 'paused' ? { ...s, phase: 'run' } : s
 }
 
+/** What the game posts, as it stands now: see GamePost. */
+export function report(s: GameState): GamePost {
+  return { game: s.game, run: s.run, phase: s.phase === 'paused' ? 'run' : s.phase, score: s.score, coins: s.coinsRun, skin: s.skin }
+}
+
 // ── colours ──────────────────────────────────────────────────────────────
 type RGB = readonly [number, number, number]
 const rgb = (hex: string): RGB => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
@@ -574,7 +641,6 @@ const alpha = (hex: string, a: number) => {
  */
 const PANEL = '#1E1F24'
 const PANEL_EDGE = '#31333B'
-const GRID_DOT = 'rgba(255,255,255,0.07)'
 const GROUND_LINE = '#4B4F5B'
 const GROUND_TICK = '#34373F'
 /** The blue bug, light enough to read against the dark panel. */
@@ -616,7 +682,7 @@ function armsFor(s: GameState): readonly Rect[] {
 /** Eyes: open with a glint, a blink now and then, flat once the run is lost. */
 function eyesFor(s: GameState): readonly Rect[] {
   if (s.phase === 'over') return [[3, 3, 1.8, 0.6, 'E'], [7.4, 3, 1.8, 0.6, 'E']]
-  if (s.tick % 160 < 6) return [[3.3, 3, 1.2, 0.5, 'E'], [7.8, 3, 1.2, 0.5, 'E']]
+  if (blinking(s.tick)) return [[3.3, 3, 1.2, 0.5, 'E'], [7.8, 3, 1.2, 0.5, 'E']]
   return [[3.3, 2, 1.2, 2, 'E'], [7.8, 2, 1.2, 2, 'E'], [3.4, 2.1, 0.5, 0.6, 'W'], [7.9, 2.1, 0.5, 0.6, 'W']]
 }
 
@@ -628,14 +694,13 @@ function scaleFor(s: GameState): [number, number] {
   }
   if (s.vy > 40) return [0.92, 1.08]
   if (s.vy < -80) return [0.95, 1.05]
-  if (s.phase === 'idle') return [1, 1 + 0.025 * Math.sin(s.tick * 0.12)]
   return [1, 1]
 }
 
 const props = new WeakMap<object, GameProps>()
 
 function propsOf(surface: ClientSurface<GameState>): GameProps {
-  return props.get(surface) ?? { best: 0, coins: 0, skin: 0, working: true, columns: 60, surface: 'terminal' }
+  return props.get(surface) ?? { best: 0, coins: 0, skin: 0, working: true, columns: 60, surface: 'terminal', collapsed: false }
 }
 
 function worldOf(surface: ClientSurface<GameState>): World {
@@ -656,8 +721,9 @@ function apply(surface: ClientSurface<GameState>, next: GameState) {
   const was = surface.state
   if (next === was) return
   surface.setState(next)
-  if ((was?.phase === 'idle' || was?.phase === 'over' || was === undefined) && next.phase === 'run') surface.post({ phase: 'run' } satisfies GamePost)
-  if (was?.phase === 'run' && next.phase === 'over') surface.post({ phase: 'over', score: next.score, coins: next.coinsRun } satisfies GamePost)
+  const started = next.phase === 'run' && (was === undefined || was.phase === 'idle' || was.phase === 'over')
+  const ended = next.phase === 'over' && was?.phase === 'run'
+  if (started || ended) surface.post(report(next))
 }
 
 /** C: the next colour unlocked. */
@@ -669,40 +735,72 @@ function cycleSkin(surface: ClientSurface<GameState>) {
   const next = (skinIndex(p, s) + 1) % open
   const name = SKINS[next]?.name ?? ''
   const note: Popup = { id: s.nextId, x: CRITTER_X, y: 24, text: open > 1 ? name : `More colours at ${SKINS[1]?.at ?? 40} coins`, color: '#FFFFFF', life: 1.1 }
-  surface.setState({ ...s, skin: next, popups: [...s.popups, note], nextId: s.nextId + 1 })
-  if (open > 1) surface.post({ skin: next } satisfies GamePost)
+  const changed: GameState = { ...s, skin: open > 1 ? next : s.skin, popups: [...s.popups, note].slice(-MAX_POPUPS), nextId: s.nextId + 1 }
+  surface.setState(changed)
+  // The whole picture, so a run that ended in this same frame still arrives.
+  if (open > 1) surface.post(report(changed))
 }
 
 const pad = (n: number) => String(Math.min(n, 9999)).padStart(4, '0')
 const fix = (n: number) => +n.toFixed(3)
 
+/** Surfaces already given their clock and input: each gets them once, whatever its state. */
+const wired = new WeakSet<object>()
+
+/** A name for a new game, so a run of an earlier one is never taken for its own. */
+const newGame = () => 1 + Math.floor(Math.random() * 2 ** 31)
+
+function wire(surface: ClientSurface<GameState>) {
+  const live = () => !propsOf(surface).collapsed
+  const ctx = (): StartContext => {
+    const q = propsOf(surface)
+    return { best: q.best, coins: q.coins }
+  }
+  // Frames gone by on the state as it stands, with nothing new to draw.
+  let held = 0
+  surface.every(worldOf(surface).tickMs, () => {
+    const s = surface.state
+    if (!s) return
+    if (!live()) {
+      // Folded away: a run waits for the player, and nothing is drawn.
+      if (s.phase === 'run') apply(surface, pause(s))
+      return
+    }
+    const next = step(s, worldOf(surface), held)
+    held = next === s ? held + 1 : 0
+    apply(surface, next)
+  })
+  surface.onPointer(e => {
+    if (!live() || e.type !== 'down' || (e.button ?? 'left') !== 'left') return
+    apply(surface, act(surface.state ?? fresh(Date.now()), ctx()))
+  })
+  surface.onKey(e => {
+    // Ctrl and Cmd combos are the app's shortcuts, not the game's keys.
+    if (!live() || e.ctrl || e.meta) return
+    const s = surface.state ?? fresh(Date.now())
+    const key = e.key.toLowerCase()
+    if (JUMP_KEYS.has(key)) apply(surface, act(s, ctx()))
+    else if (DROP_KEYS.has(key)) apply(surface, drop(s))
+    else if (key === 'p') apply(surface, pause(s))
+    else if (key === 'c') cycleSkin(surface)
+  })
+  const first: GameState = { ...fresh(Date.now()), game: newGame() }
+  surface.setState(first)
+  // A new game: nothing that was being played before is still going.
+  surface.post(report(first))
+}
+
 const Game: ClientModule<GameProps, GameState> = (p, surface) => {
   props.set(surface, p)
-  if (surface.state === undefined) {
-    surface.every(worldOf(surface).tickMs, () => {
-      const s = surface.state
-      if (s) apply(surface, step(s, worldOf(surface)))
-    })
-    const ctx = (): StartContext => {
-      const q = propsOf(surface)
-      return { best: q.best, coins: q.coins }
-    }
-    surface.onPointer(e => {
-      if (e.type !== 'down' || (e.button ?? 'left') !== 'left') return
-      apply(surface, act(surface.state ?? fresh(Date.now()), ctx()))
-    })
-    surface.onKey(e => {
-      const s = surface.state ?? fresh(Date.now())
-      const key = e.key.toLowerCase()
-      if (JUMP_KEYS.has(key)) apply(surface, act(s, ctx()))
-      else if (DROP_KEYS.has(key)) apply(surface, drop(s))
-      else if (key === 'p') apply(surface, pause(s))
-      else if (key === 'c') cycleSkin(surface)
-    })
-    surface.setState(fresh(Date.now()))
+  if (!wired.has(surface)) {
+    wired.add(surface)
+    wire(surface)
   }
   const s = surface.state ?? fresh(0)
   const columns = Math.max(24, surface.columns || p.columns)
+  const { Box, Text } = surface.elements
+  // Folded away, none of the band is on screen: draw next to nothing.
+  if (p.collapsed) return <Box width={columns} height={heightFor(p.surface)} />
   const world = worldFor(p.surface, columns)
   const best = Math.max(p.best, s.score)
   const skin = SKINS[skinIndex(p, s)] ?? SKINS[0] ?? { name: 'Ember', at: 0, body: '#E8743B', shade: '#C2562A', light: '#F7A270' }
@@ -731,8 +829,6 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     lines.push({ text: ready ? 'Click or Space to run again' : ' ', color: '#FFE9A8' })
   }
 
-  const { Box, Text } = surface.elements
-
   // Chips across the top: the level and powers on the left, the counts on the right.
   const chip = (key: string, text: string, color = '#FFFFFF', bg = 'rgba(16,20,36,0.55)') => (
     <Box key={key}>
@@ -749,6 +845,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
   const right: RenderElement[] = [chip('best', `★ ${pad(best)}`, '#FFE08A'), chip('coins', `● ${s.coinsRun}`, '#FFE08A'), chip('score', pad(s.score))]
 
   if (p.surface === 'desktop') {
+    const field = fieldColumns('desktop', columns)
     const W = world.width
     // A rectangle of the world, in pixels, as a Box on the fine grid: `round`
     // makes it a pill or a disc, edged in the colour given or its own.
@@ -793,17 +890,13 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       pieces.push(...more)
     }
 
-    // No scenery: a plain dark panel like an editor's, with a faint dot grid
-    // drifting by and one ground line with ticks under it, so the run still
-    // reads as moving.
+    // No scenery: a plain dark panel like an editor's, with one ground line
+    // and ticks under it drifting by, so the run still reads as moving.
     const layer = (name: string, pace: number, period: number, each: (key: string, x: number, k: number) => void) => {
       const off = s.dist * pace
       const first = Math.floor(off / period) - 1
       for (let k = first; k <= first + Math.ceil(W / period) + 2; k++) each(`${name}${k}`, k * period - off, k)
     }
-    layer('dot', 0.25, 16, (key, x) => {
-      for (let r = 0; r < 4; r++) put(px(`${key}r${r}`, x, 4 + r * 8, 0.7, 0.7, GRID_DOT))
-    })
     put(px('ground', 0, GROUND, W, 0.8, GROUND_LINE))
     layer('tick', 1, 17, (key, x, k) => {
       put(px(key, x + noise(k) * 8, GROUND + 2.5 + noise(k * 2.7) * 3, 1.5 + noise(k * 1.3) * 2.5, 0.6, GROUND_TICK))
@@ -902,8 +995,8 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       </Box>
     ))
 
-    return (
-      <Box position="relative" width={columns} height={heightFor('desktop')} overflow="hidden" backgroundColor={PANEL} borderStyle="round" borderColor={PANEL_EDGE} padding={0}>
+    const panel = (
+      <Box key="field" position="relative" width={field} height={heightFor('desktop')} overflow="hidden" backgroundColor={PANEL} borderStyle="round" borderColor={PANEL_EDGE} padding={0}>
         {pieces}
         {words}
         {s.banner > 0 && s.phase === 'run' ? (
@@ -934,6 +1027,14 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
           </Box>
         ) : null}
       </Box>
+    )
+    // On a window wider than the field, the field sits in the middle of the band.
+    return field < columns ? (
+      <Box width={columns} height={heightFor('desktop')} flexDirection="row" justifyContent="center">
+        {panel}
+      </Box>
+    ) : (
+      panel
     )
   }
 
@@ -979,7 +1080,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
   for (const o of s.orbs) things.push(glyph(`o${o.id}`, o.x, o.y, o.kind === 'shield' ? 'S' : 'M', '#FFFFFF', o.kind === 'shield' ? '#2B9FD6' : '#D9433F'))
   const crow = Math.max(0, FIELD - 2 - Math.round(s.lift / TY))
   const legs = s.lift > 0 ? ' ▀▀  ▀▀ ' : s.phase === 'run' && stride(s) === 1 ? '  ▀  ▀  ' : ' ▀ ▀▀ ▀ '
-  const eyes = s.phase === 'over' ? ' -  - ' : s.tick % 160 < 6 ? ' _  _ ' : ' o  o '
+  const eyes = s.phase === 'over' ? ' -  - ' : blinking(s.tick) ? ' _  _ ' : ' o  o '
   const words = s.popups.map(w => glyph(`w${w.id}`, Math.max(0, w.x), Math.min(GROUND - 1, w.y + 4), w.text, '#FFFFFF'))
   return (
     <Box flexDirection="column" width={columns} height={heightFor('terminal')}>
