@@ -11,7 +11,7 @@
     {
       "name": "runner",
       "source": "./",
-      "description": "A runner game above the prompt while Claude works: double jumps, bugs, coins, power-ups, levels, a day-night sky and colours to unlock"
+      "description": "A runner game above the prompt while Claude works: double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel"
     }
   ]
 }

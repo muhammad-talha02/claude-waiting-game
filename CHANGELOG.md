@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- A simple, developer-friendly look on the desktop: the scenery is gone (sky, sun, moon, stars, clouds, hills, grass and dirt). The game now runs on a plain dark panel like an editor's, with a faint dot grid and one ground line, so only the critter, hazards and coins have colour.
+
 ## 0.5.0
 
 - An easier-on-the-eyes desktop scene: a deep, muted sky (steel blue by day, plum at dusk, navy at night) in place of the pale one, darker hills and earth, softer clouds and sun, and a smoother sky gradient.

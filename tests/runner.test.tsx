@@ -194,7 +194,7 @@ test('a click starts a run, Space jumps, and a lost run keeps the best score, th
   await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'runner' })
   await ui.advance(DESK.tickMs)
   expect(await ui.find({ in: 'runner', text: /Click or Space to start/ })).toBeUndefined()
-  expect(await ui.find({ in: 'runner', key: 'sky0' })).toBeDefined()
+  expect(await ui.find({ in: 'runner', key: 'ground' })).toBeDefined()
 
   // On the desktop the critter moves on the fine grid, by its margins.
   const topOf = async () => Number((await ui.find({ in: 'runner', key: 'body' }))?.props.marginTop)

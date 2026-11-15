@@ -72,7 +72,7 @@ export type GameState = {
   /** Seconds left of the level banner. */
   banner: number
   tick: number
-  /** Pixels run so far: drives the legs, the ground, the sky and the hills. */
+  /** Pixels run so far: drives the legs, the ground ticks and the dot grid. */
   dist: number
   seed: number
   /** Pixels of clear ground before the next hazard. */
@@ -126,8 +126,6 @@ const ORB_CHANCE = 0.14
 /** Coins only a double jump reaches. */
 const SKY_COIN_Y = 29
 const LEVEL_EVERY = 8
-/** One full day, dawn to dawn, in pixels run. */
-const DAY_PX = 5200
 const MAX_PARTICLES = 40
 
 export const speedFor = (cleared: number) => Math.min(190, 75 + cleared * 2.2)
@@ -564,50 +562,23 @@ export function pause(s: GameState): GameState {
 // ── colours ──────────────────────────────────────────────────────────────
 type RGB = readonly [number, number, number]
 const rgb = (hex: string): RGB => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
-const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
-const css = (c: RGB, alpha = 1) => {
-  const [r, g, b] = c.map(v => Math.round(Math.max(0, Math.min(255, v))))
-  if (alpha >= 1) return `#${[r, g, b].map(v => (v ?? 0).toString(16).padStart(2, '0')).join('')}`
-  return `rgba(${r},${g},${b},${Math.max(0, alpha).toFixed(2)})`
+const alpha = (hex: string, a: number) => {
+  const [r, g, b] = rgb(hex)
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a)).toFixed(2)})`
 }
-const alpha = (hex: string, a: number) => css(rgb(hex), a)
 
 /**
- * The sky through one day: day, dusk, night, dawn. Deep, muted colours, so
- * the band never glares beside the chat and the critter, the hazards and the
- * coins stand out against it; the day is only a little lighter than the dusk.
+ * The desktop panel: plain and dark, like an editor's background, with no
+ * scenery, so it sits quietly beside the chat and only what you play against
+ * has colour.
  */
-const DAY_TOP = rgb('#1D4262')
-const DAY_BOTTOM = rgb('#41768F')
-const SKY: readonly { t: number; top: RGB; bottom: RGB; night: number }[] = [
-  { t: 0, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
-  { t: 0.38, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
-  { t: 0.47, top: rgb('#2C2652'), bottom: rgb('#945860'), night: 0.15 },
-  { t: 0.56, top: rgb('#0D1330'), bottom: rgb('#1C284E'), night: 1 },
-  { t: 0.86, top: rgb('#0D1330'), bottom: rgb('#1C284E'), night: 1 },
-  { t: 0.94, top: rgb('#2A3262'), bottom: rgb('#9A6A66'), night: 0.15 },
-  { t: 1, top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 },
-]
-
-export function skyAt(dist: number): { top: RGB; bottom: RGB; night: number; t: number } {
-  const t = (((dist + DAY_PX * 0.04) / DAY_PX) % 1 + 1) % 1
-  for (let i = 0; i < SKY.length - 1; i++) {
-    const a = SKY[i]
-    const b = SKY[i + 1]
-    if (a && b && t >= a.t && t <= b.t) {
-      const k = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t)
-      return { top: mix(a.top, b.top, k), bottom: mix(a.bottom, b.bottom, k), night: a.night + (b.night - a.night) * k, t }
-    }
-  }
-  const first = SKY[0] ?? { top: DAY_TOP, bottom: DAY_BOTTOM, night: 0 }
-  return { top: first.top, bottom: first.bottom, night: first.night, t }
-}
-
-const NIGHT = rgb('#0B1026')
-/** The blue bug, light enough to read against the deep sky. */
+const PANEL = '#1E1F24'
+const PANEL_EDGE = '#31333B'
+const GRID_DOT = 'rgba(255,255,255,0.07)'
+const GROUND_LINE = '#4B4F5B'
+const GROUND_TICK = '#34373F'
+/** The blue bug, light enough to read against the dark panel. */
 const HIGH_BUG = '#86A4FF'
-/** The edge of a see-through disc: none, so its rim is not doubled. */
-const CLEAR = 'rgba(0,0,0,0)'
 
 // ── the critter, in its own pixels (x, y from its top-left, w, h, part) ────
 type Part = 'B' | 'S' | 'L' | 'E' | 'W' | 'P'
@@ -779,9 +750,6 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
 
   if (p.surface === 'desktop') {
     const W = world.width
-    const sky = s.phase === 'idle' ? skyAt(0) : skyAt(s.dist)
-    const night = sky.night
-    const dim = (hex: string, k = 0.55) => css(mix(rgb(hex), NIGHT, night * k))
     // A rectangle of the world, in pixels, as a Box on the fine grid: `round`
     // makes it a pill or a disc, edged in the colour given or its own.
     // (Not `h` for the height: that is the JSX factory's name here.)
@@ -825,70 +793,20 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
       pieces.push(...more)
     }
 
-    // Sky: bands from the top colour down to the horizon's.
-    const BANDS = 10
-    for (let i = 0; i < BANDS; i++) put(px(`sky${i}`, 0, (GROUND / BANDS) * i, W, GROUND / BANDS + 0.2, css(mix(sky.top, sky.bottom, i / (BANDS - 1)))))
-
-    // Stars and the moon at night, the sun by day.
-    if (night > 0.05) {
-      for (let i = 0; i < 16; i++) {
-        const tw = 0.55 + 0.45 * Math.sin(s.tick * 0.06 + i * 1.7)
-        put(px(`star${i}`, noise(i + 1) * W, 1 + noise(i + 40) * 20, 0.8, 0.8, `rgba(255,255,255,${(night * tw * 0.9).toFixed(2)})`))
-      }
-    }
-    if (sky.t < 0.53) {
-      const k = sky.t / 0.53
-      const sx = W * (0.6 - 0.2 * k)
-      const sy = 7 + k * k * 28
-      put(px('sunglow', sx - 2.5, sy - 2.5, 12, 12, 'rgba(255,200,110,0.16)', CLEAR), px('sun', sx, sy, 7, 7, '#F6CF6A', '#E8B24A'))
-    } else if (sky.t > 0.52 && sky.t < 0.93) {
-      const k = (sky.t - 0.52) / 0.41
-      const mx = W * (0.62 - 0.2 * k)
-      const my = 28 - Math.sin(k * Math.PI) * 21
-      put(px('moonglow', mx - 2, my - 2, 10, 10, 'rgba(240,240,220,0.12)', CLEAR), px('moon', mx, my, 6, 6, '#F4F1DE', '#E6E1C5'), px('crater', mx + 1.5, my + 2.5, 1.4, 1.2, 'rgba(0,0,0,0.10)', CLEAR))
-    }
-
-    // Far hills, near hills and clouds, each sliding at its own pace.
+    // No scenery: a plain dark panel like an editor's, with a faint dot grid
+    // drifting by and one ground line with ticks under it, so the run still
+    // reads as moving.
     const layer = (name: string, pace: number, period: number, each: (key: string, x: number, k: number) => void) => {
       const off = s.dist * pace
       const first = Math.floor(off / period) - 1
       for (let k = first; k <= first + Math.ceil(W / period) + 2; k++) each(`${name}${k}`, k * period - off, k)
     }
-    const farHill = css(mix(mix(rgb('#3C7A70'), sky.bottom, 0.35), NIGHT, night * 0.55))
-    const nearHill = css(mix(mix(rgb('#2C6A4C'), sky.bottom, 0.1), NIGHT, night * 0.55))
-    // A hill: three rounded steps, wide and low to narrow and high, read as a dome.
-    const hill = (key: string, cx: number, w: number, tall: number, color: string) => {
-      const base = GROUND + 1
-      put(
-        px(`${key}a`, cx - w / 2, base - tall * 0.5, w, tall * 0.5 + 3, color, true),
-        px(`${key}b`, cx - w * 0.34, base - tall * 0.8, w * 0.68, tall * 0.8 + 3, color, true),
-        px(`${key}c`, cx - w * 0.17, base - tall, w * 0.34, tall + 3, color, true),
-      )
-    }
-    layer('far', 0.1, 70, (key, x, k) => {
-      const w = 55 + noise(k * 3.1) * 35
-      hill(key, x + w / 2 + noise(k) * 20, w, 13 + noise(k * 5.7) * 9, farHill)
+    layer('dot', 0.25, 16, (key, x) => {
+      for (let r = 0; r < 4; r++) put(px(`${key}r${r}`, x, 4 + r * 8, 0.7, 0.7, GRID_DOT))
     })
-    layer('cloud', 0.22, 95, (key, x, k) => {
-      if (noise(k * 2.3) < 0.3) return
-      const y = 3 + noise(k * 9.1) * 9
-      const c = `rgba(214,228,242,${(0.34 - 0.2 * night).toFixed(2)})`
-      put(px(`${key}a`, x, y, 16, 4, c, true), px(`${key}b`, x + 3, y - 2.5, 7, 4.5, c, true), px(`${key}c`, x + 8, y - 1.5, 6, 4, c, true))
-    })
-    layer('near', 0.3, 48, (key, x, k) => {
-      if (noise(k * 4.4) < 0.25) return
-      const w = 28 + noise(k * 6.2) * 22
-      hill(key, x + w / 2 + noise(k + 9) * 12, w, 7 + noise(k * 8.3) * 6, nearHill)
-    })
-
-    // Ground: grass on dirt, with specks and tufts going by.
-    put(px('dirt', 0, GROUND + 1.2, W, FIELD_H - GROUND, dim('#5A3F2A')), px('grass', 0, GROUND, W, 1.6, dim('#4F9C47')))
-    layer('speck', 1, 19, (key, x, k) => {
-      put(px(key, x + noise(k) * 10, GROUND + 3 + noise(k * 2.7) * 3, 1 + noise(k * 1.3), 0.7, dim(noise(k * 5.5) < 0.5 ? '#45301F' : '#7A5A3C')))
-    })
-    layer('tuft', 1, 31, (key, x, k) => {
-      if (noise(k * 7.7) < 0.4) return
-      put(px(key, x, GROUND - 0.8, 0.8, 1, dim('#3F8439')), px(`${key}b`, x + 1.2, GROUND - 1.3, 0.8, 1.5, dim('#3F8439')))
+    put(px('ground', 0, GROUND, W, 0.8, GROUND_LINE))
+    layer('tick', 1, 17, (key, x, k) => {
+      put(px(key, x + noise(k) * 8, GROUND + 2.5 + noise(k * 2.7) * 3, 1.5 + noise(k * 1.3) * 2.5, 0.6, GROUND_TICK))
     })
 
     // Hazards.
@@ -900,10 +818,10 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
         const [body, edge, shine] = o.kind === 'rock' ? ['#A6ACB8', '#6E7480', '#D8DCE4'] : ['#B58E69', '#7A5B40', '#DEBC96']
         put(
           px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.3)', true),
-          px(k, o.x, top, o.w, o.h + 0.5, dim(body, 0.35), dim(edge, 0.35)),
-          px(`${k}l`, o.x + 1, top + 1, Math.max(1, o.w * 0.45), 1.4, dim(shine, 0.35), true),
+          px(k, o.x, top, o.w, o.h + 0.5, body, edge),
+          px(`${k}l`, o.x + 1, top + 1, Math.max(1, o.w * 0.45), 1.4, shine, true),
         )
-        if (o.kind === 'boulder') put(px(`${k}c`, o.x + o.w * 0.6, top + 2.5, 0.6, 3, dim('#6E5440', 0.35)))
+        if (o.kind === 'boulder') put(px(`${k}c`, o.x + o.w * 0.6, top + 2.5, 0.6, 3, '#6E5440'))
       } else if (o.kind === 'crystal') {
         put(
           px(`${k}s`, o.x - 0.8, GROUND - 0.5, o.w + 1.6, 1.2, 'rgba(0,0,0,0.3)', true),
@@ -985,7 +903,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     ))
 
     return (
-      <Box position="relative" width={columns} height={heightFor('desktop')} overflow="hidden" backgroundColor={css(sky.bottom)} borderStyle="round" borderColor={css(sky.top)} padding={0}>
+      <Box position="relative" width={columns} height={heightFor('desktop')} overflow="hidden" backgroundColor={PANEL} borderStyle="round" borderColor={PANEL_EDGE} padding={0}>
         {pieces}
         {words}
         {s.banner > 0 && s.phase === 'run' ? (

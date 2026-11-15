@@ -2,7 +2,7 @@
 
 A small runner game for [Claude Code](https://claude.com/claude-code), in the band above the prompt. It shows up while Claude works, so you have something to do during a long turn.
 
-You jump rocks and bugs, collect coins, pick up power-ups and level up, under a sky that goes from day to night as you run. It runs in the terminal and in the Claude desktop app's Code tab.
+You jump rocks and bugs, collect coins, pick up power-ups and level up. It runs on a plain dark panel, like an editor's, so it sits quietly beside your work. It runs in the terminal and in the Claude desktop app's Code tab.
 
 <!-- Add a screenshot or GIF here: ![Critter Run](docs/screenshot.png) -->
 
@@ -69,7 +69,6 @@ To keep it installed but hide the game, run `/runner off`.
 - **Close call**: clear a hazard by a hair for a bonus point.
 - Power orbs: the **🛡 shield** (blue, a cross) takes one hit for you within 12 seconds; the **🧲 magnet** (red, a U) pulls coins in for 10 seconds.
 - Every 8 hazards cleared is a new level: faster, with new hazards (crystals and low bugs from level 2, head-high and high bugs from level 3).
-- The sky runs through a day as you go: day, sunset, a starry night, dawn.
 - After a lost run there's a short pause before a key starts the next one, so mashing Space doesn't restart by accident.
 
 ## Saved between sessions
