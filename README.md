@@ -131,7 +131,7 @@ claude plugin test ./critter-run
 
 Once Claude Code has loaded the mod, it writes its types to `.claude-plugin/types/` (ignored by git), and `tsc -p .` type-checks it.
 
-The critter, the hazards and the scenery are original art drawn in code.
+The critter and the hazards are original art drawn in code.
 
 ## License
 
