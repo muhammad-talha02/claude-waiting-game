@@ -1,10 +1,12 @@
-# Critter Run
+# Claude Waiting Game
+
+**Bored while Claude works? Play the waiting game.**
 
 A small runner game for [Claude Code](https://claude.com/claude-code), in the band above the prompt. It shows up while Claude works, so you have something to do during a long turn.
 
 You jump rocks and bugs, collect coins, pick up power-ups and level up. It runs on a plain dark panel, like an editor's, so it sits quietly beside your work. It runs in the terminal and in the Claude desktop app's Code tab.
 
-<!-- Add a screenshot or GIF here: ![Critter Run](docs/screenshot.png) -->
+<!-- Add a screenshot or GIF here: ![Claude Waiting Game](docs/screenshot.png) -->
 
 ## Install
 
@@ -13,7 +15,7 @@ Needs Claude Code with mod support (it was built and tested on **2.1.325**). If 
 **In a terminal session**, type at the prompt:
 
 ```
-/plugin install runner --marketplace muhammad-talha02/critter-run
+/plugin install waiting-game --marketplace muhammad-talha02/claude-waiting-game
 ```
 
 Answer `y` to add the marketplace, then press Enter to install it for your user (all your sessions).
@@ -21,21 +23,21 @@ Answer `y` to add the marketplace, then press Enter to install it for your user 
 **From a shell:**
 
 ```bash
-claude plugin install runner --marketplace muhammad-talha02/critter-run
+claude plugin install waiting-game --marketplace muhammad-talha02/claude-waiting-game
 ```
 
-**In the Claude desktop app** (where `/plugin` doesn't run): click **+** next to the prompt box, then **Plugins**, then **Add marketplace** with `muhammad-talha02/critter-run`, then **Add plugin**.
+**In the Claude desktop app** (where `/plugin` doesn't run): click **+** next to the prompt box, then **Plugins**, then **Add marketplace** with `muhammad-talha02/claude-waiting-game`, then **Add plugin**.
 
 A plugin installed from a terminal for your user also loads in the desktop app's Code tab.
 
 ## Update
 
 ```bash
-claude plugin marketplace update critter-run
+claude plugin marketplace update claude-waiting-game
 ```
 
 ```bash
-claude plugin update runner@critter-run
+claude plugin update waiting-game@claude-waiting-game
 ```
 
 Then start a new session.
@@ -43,10 +45,10 @@ Then start a new session.
 ## Uninstall
 
 ```bash
-claude plugin uninstall runner@critter-run
+claude plugin uninstall waiting-game@claude-waiting-game
 ```
 
-To keep it installed but hide the game, run `/runner off`.
+To keep it installed but hide the game, run `/waiting-game off`.
 
 ## How it works
 
@@ -84,17 +86,17 @@ Your best score, coins collected over every run, runs played, and the colour you
 | Gold | 450 |
 | Ghost | 750 |
 
-`/runner stats` shows where you are.
+`/waiting-game stats` shows where you are.
 
 ## On and off
 
 | | |
 | --- | --- |
 | **● Game on / ○ Game off** | A toggle in the prompt footer, beside the mode labels; the dot is green while it's on |
-| `/runner off` | Hide the game |
-| `/runner on` | Show it again |
-| `/runner` | Flip it |
-| `/runner stats` | Best score, coins, runs and colours |
+| `/waiting-game off` | Hide the game |
+| `/waiting-game on` | Show it again |
+| `/waiting-game` | Flip it |
+| `/waiting-game stats` | Best score, coins, runs and colours |
 
 ## Where it runs
 
@@ -108,25 +110,25 @@ The mod is a Claude Code function-hooks plugin with no build step:
 
 | File | What it does |
 | --- | --- |
-| `hooks/register.tsx` | When the band shows, the footer button, `/runner`, and the saved stats |
+| `hooks/register.tsx` | When the band shows, the footer button, `/waiting-game`, and the saved stats |
 | `hooks/game.tsx` | The game itself: physics, the course, and drawing for each surface |
 | `types/index.d.ts` | The mod's state contract |
-| `tests/runner.test.tsx` | Tests for the game rules and the band |
+| `tests/waiting-game.test.tsx` | Tests for the game rules and the band |
 
 Run it from a clone without installing:
 
 ```bash
-claude --plugin-dir ./critter-run
+claude --plugin-dir ./claude-waiting-game
 ```
 
 Check and test it:
 
 ```bash
-claude plugin validate ./critter-run
+claude plugin validate ./claude-waiting-game
 ```
 
 ```bash
-claude plugin test ./critter-run
+claude plugin test ./claude-waiting-game
 ```
 
 Once Claude Code has loaded the mod, it writes its types to `.claude-plugin/types/` (ignored by git), and `tsc -p .` type-checks it.
@@ -136,3 +138,5 @@ The critter and the hazards are original art drawn in code.
 ## License
 
 [MIT](LICENSE)
+
+Claude Waiting Game is a community project. It isn't made by, or affiliated with, Anthropic.

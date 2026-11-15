@@ -4,17 +4,17 @@ import type { EngineInterface, Register } from 'claude-code'
 import { heightFor, SKINS, unlockedCount } from './game'
 import type { GameProps, GamePost } from './game'
 
-// A runner game in the band above the prompt while Claude is working. The
-// game runs in ./game.tsx; this module decides when the band shows, keeps
-// the best score, the coins, the runs and the critter's colour across
-// sessions, and answers /runner.
+// Claude Waiting Game: a runner game in the band above the prompt while
+// Claude is working. The game runs in ./game.tsx; this module decides when
+// the band shows, keeps the best score, the coins, the runs and the
+// critter's colour across sessions, and answers /waiting-game.
 
-const playing = atom({ plugin: 'runner', key: 'playing' } as const, false)
-const best = atom({ plugin: 'runner', key: 'best' } as const, 0)
-const enabled = atom({ plugin: 'runner', key: 'enabled' } as const, true)
-const coins = atom({ plugin: 'runner', key: 'coins' } as const, 0)
-const runs = atom({ plugin: 'runner', key: 'runs' } as const, 0)
-const skin = atom({ plugin: 'runner', key: 'skin' } as const, 0)
+const playing = atom({ plugin: 'waiting-game', key: 'playing' } as const, false)
+const best = atom({ plugin: 'waiting-game', key: 'best' } as const, 0)
+const enabled = atom({ plugin: 'waiting-game', key: 'enabled' } as const, true)
+const coins = atom({ plugin: 'waiting-game', key: 'coins' } as const, 0)
+const runs = atom({ plugin: 'waiting-game', key: 'runs' } as const, 0)
+const skin = atom({ plugin: 'waiting-game', key: 'skin' } as const, 0)
 
 const BEST_KEY = 'best'
 const ENABLED_KEY = 'enabled'
@@ -58,7 +58,7 @@ async function stats($: EngineInterface): Promise<string> {
   ].join('\n')
 }
 
-const TOGGLE_KEY = 'runner-toggle'
+const TOGGLE_KEY = 'waiting-game-toggle'
 /** The footer toggle's dot while the game is on. */
 const ON_DOT = '#46A758'
 
@@ -76,31 +76,31 @@ export const register: Register = on => {
     if (typeof savedOn === 'boolean') await update($, enabled, () => savedOn)
     await update($, playing, () => false)
     await $.command.register({
-      name: 'runner',
-      description: 'The runner game above the prompt while Claude works: on, off, stats, or no argument to flip it',
+      name: 'waiting-game',
+      description: 'Claude Waiting Game, the runner game above the prompt while Claude works: on, off, stats, or no argument to flip it',
       argumentHint: '[on | off | stats]',
       immediate: true,
     })
     return result
   })
 
-  on('command.run', { command: 'runner' }, async ($, e) => {
+  on('command.run', { command: 'waiting-game' }, async ($, e) => {
     const arg = (e.args ?? '').trim().toLowerCase()
     if (arg === 'stats') return { text: await stats($) }
     const now = await read($, enabled)
     const want = arg === 'on' ? true : arg === 'off' ? false : arg === '' ? !now : null
-    if (want === null) return { text: 'Usage: /runner [on | off | stats]' }
+    if (want === null) return { text: 'Usage: /waiting-game [on | off | stats]' }
     await setEnabled($, want)
     const b = await read($, best)
     return {
       text: want
-        ? `Runner on: it shows above the prompt while Claude is working.${b > 0 ? ` Best score ${b}.` : ''}`
-        : 'Runner off. /runner on brings it back.',
+        ? `Waiting Game on: it shows above the prompt while Claude is working.${b > 0 ? ` Best score ${b}.` : ''}`
+        : 'Waiting Game off. /waiting-game on brings it back.',
     }
   })
 
   on('ui.message', async ($, e, next) => {
-    if (e.component !== 'AbovePrompt' || e.element !== 'runner' || !isPost(e.data)) return next(e)
+    if (e.component !== 'AbovePrompt' || e.element !== 'waiting-game' || !isPost(e.data)) return next(e)
     const data = e.data
     if ('skin' in data) {
       const k = count(data.skin)
@@ -165,7 +165,7 @@ export const register: Register = on => {
     }
     return (
       <Box width="100%">
-        <Client key="runner" module="./game.tsx" props={props} width="100%" height={heightFor(e.surface)} />
+        <Client key="waiting-game" module="./game.tsx" props={props} width="100%" height={heightFor(e.surface)} />
       </Box>
     )
   })

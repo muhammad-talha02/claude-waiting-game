@@ -3,7 +3,7 @@ export type BestScore = number
 
 declare module 'claude-code' {
   interface PluginState {
-    runner: {
+    'waiting-game': {
       playing: boolean
       best: BestScore
       enabled: boolean

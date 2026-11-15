@@ -1,17 +1,17 @@
 {
-  "name": "critter-run",
+  "name": "claude-waiting-game",
   "owner": {
     "name": "M Talha",
     "url": "https://github.com/muhammad-talha02"
   },
   "metadata": {
-    "description": "Critter Run: a small runner game above the Claude Code prompt, to play while Claude works"
+    "description": "Claude Waiting Game: a small runner game above the Claude Code prompt, to play while Claude works"
   },
   "plugins": [
     {
-      "name": "runner",
+      "name": "waiting-game",
       "source": "./",
-      "description": "A runner game above the prompt while Claude works: double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel"
+      "description": "Bored while Claude works? A runner game above the prompt: double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel"
     }
   ]
 }

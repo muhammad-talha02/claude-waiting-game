@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+- Renamed **Claude Waiting Game** (it was Critter Run). The plugin is now `waiting-game`, its marketplace `claude-waiting-game`, and `/waiting-game` takes the place of `/runner`. The start screen reads CLAUDE WAITING GAME.
+
 ## 0.6.1
 
 - The footer toggle reads like the footer's own text: no 🎮 emoji, dim words, and a status dot, green **● Game on** or hollow **○ Game off**.

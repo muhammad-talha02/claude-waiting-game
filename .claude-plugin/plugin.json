@@ -1,14 +1,14 @@
 {
-  "name": "runner",
-  "version": "0.6.1",
-  "description": "Critter Run, a runner game above the prompt to play while Claude works: jumps and double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel",
+  "name": "waiting-game",
+  "version": "0.7.0",
+  "description": "Claude Waiting Game: bored while Claude works? A runner game above the Claude Code prompt, with jumps and double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel",
   "author": {
     "name": "M Talha",
     "url": "https://github.com/muhammad-talha02"
   },
-  "repository": "https://github.com/muhammad-talha02/critter-run",
-  "homepage": "https://github.com/muhammad-talha02/critter-run",
+  "repository": "https://github.com/muhammad-talha02/claude-waiting-game",
+  "homepage": "https://github.com/muhammad-talha02/claude-waiting-game",
   "license": "MIT",
-  "keywords": ["claude-code-mods", "game", "runner", "above-prompt", "fun"],
+  "keywords": ["claude-code", "claude-code-plugin", "claude-code-mods", "game", "waiting-game", "runner-game", "terminal-game", "above-prompt"],
   "types": "./types/index.d.ts"
 }

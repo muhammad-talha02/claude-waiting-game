@@ -712,7 +712,7 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
 
   const lines: { text: string; color: string; strong?: boolean; extra?: { text: string; color: string } }[] = []
   if (s.phase === 'idle') {
-    lines.push({ text: 'CRITTER RUN', color: '#FFFFFF', strong: true })
+    lines.push({ text: 'CLAUDE WAITING GAME', color: '#FFFFFF', strong: true })
     lines.push({ text: 'Click or Space to start', color: '#FFE9A8' })
     lines.push({ text: narrow ? '↑ jump ×2 · ↓ drop · P pause · C colour' : '↑ / Space jump · again in the air for a double jump · ↓ drop · P pause · C colour', color: '#D9DEEA' })
     lines.push({ text: `★ ${best}   ● ${coinsNow}   ${skin.name}${unlockedCount(coinsNow) > 1 ? ` (${unlockedCount(coinsNow)}/${SKINS.length})` : ''}`, color: '#D9DEEA' })

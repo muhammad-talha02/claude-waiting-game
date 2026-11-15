@@ -5,7 +5,7 @@ import type { GameState, Hazard, HazardKind } from '../hooks/game'
 
 const band = (isWorking: boolean) =>
   ({
-    plugin: 'runner',
+    plugin: 'waiting-game',
     component: 'AbovePrompt',
     requestId: 'band',
     props: {
@@ -172,9 +172,9 @@ test('the band shows the game only while Claude works, on terminal and desktop',
 
     const busy = await $.ui.mount({ ...band(true), surface })
     const client = await busy.find({ type: 'Client' })
-    expect(client?.key).toBe('runner')
+    expect(client?.key).toBe('waiting-game')
     expect(client?.props.height).toBe(heightFor(surface))
-    expect((await busy.find({ in: 'runner', type: 'Text', text: /Click or Space to start/ }))?.text).toContain('Click or Space')
+    expect((await busy.find({ in: 'waiting-game', type: 'Text', text: /Click or Space to start/ }))?.text).toContain('Click or Space')
     await busy.unmount()
   }
   const phone = await $.ui.mount({ ...band(true), surface: 'mobile' })
@@ -185,75 +185,75 @@ test('the band shows the game only while Claude works, on terminal and desktop',
 test('a click starts a run, Space jumps, and a lost run keeps the best score, the coins and the count', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'runner' } }))
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
 
   const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
-  await ui.resize({ columns: 80, rows: heightFor('desktop'), in: 'runner' })
-  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'runner' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), in: 'waiting-game' })
+  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'waiting-game' })
   await ui.advance(DESK.tickMs)
-  expect(await ui.find({ in: 'runner', text: /Click or Space to start/ })).toBeUndefined()
-  expect(await ui.find({ in: 'runner', key: 'ground' })).toBeDefined()
+  expect(await ui.find({ in: 'waiting-game', text: /Click or Space to start/ })).toBeUndefined()
+  expect(await ui.find({ in: 'waiting-game', key: 'ground' })).toBeDefined()
 
   // On the desktop the critter moves on the fine grid, by its margins.
-  const topOf = async () => Number((await ui.find({ in: 'runner', key: 'body' }))?.props.marginTop)
+  const topOf = async () => Number((await ui.find({ in: 'waiting-game', key: 'body' }))?.props.marginTop)
   const ground = await topOf()
-  await ui.key({ key: ' ', in: 'runner' })
+  await ui.key({ key: ' ', in: 'waiting-game' })
   await ui.advance(DESK.tickMs * 10)
   expect(await topOf()).toBeLessThan(ground)
 
   // Claude finishes while the run goes on: the band stays for the run, and says so.
   await ui.redraw(band(false).props)
   expect(await ui.find({ type: 'Client' })).toBeDefined()
-  expect(await ui.find({ in: 'runner', text: /Claude is done/ })).toBeDefined()
+  expect(await ui.find({ in: 'waiting-game', text: /Claude is done/ })).toBeDefined()
 
   // No more jumps: the run ends, and the band leaves a few seconds later.
   await ui.advance(DESK.tickMs * 2000)
-  expect((await ui.find({ in: 'runner', text: /GAME OVER/ }))?.text).toContain('GAME OVER')
+  expect((await ui.find({ in: 'waiting-game', text: /GAME OVER/ }))?.text).toContain('GAME OVER')
   await clock.advance(7_000)
   expect(await ui.find({ type: 'Client' })).toBeUndefined()
   await ui.unmount()
 
-  const stats = await $.command.run({ command: 'runner', args: 'stats' } as never)
+  const stats = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
   expect(stats.text).toContain('1 run')
 })
 
 test('a colour picked in the game is kept, and the game draws it', async ($, on) => {
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'runner' } }))
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
 
   const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
-  await ui.post({ phase: 'over', score: 3, coins: 40 }, { in: 'runner' })
-  await ui.post({ skin: 1 }, { in: 'runner' })
+  await ui.post({ phase: 'over', score: 3, coins: 40 }, { in: 'waiting-game' })
+  await ui.post({ skin: 1 }, { in: 'waiting-game' })
   const client = await ui.find({ type: 'Client' })
   expect((client?.props.props as { skin?: number; coins?: number } | undefined)?.skin).toBe(1)
   expect((client?.props.props as { skin?: number; coins?: number } | undefined)?.coins).toBe(40)
-  await ui.resize({ columns: 80, rows: heightFor('desktop'), in: 'runner' })
-  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'runner' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), in: 'waiting-game' })
+  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'waiting-game' })
   await ui.advance(DESK.tickMs)
-  expect((await ui.find({ in: 'runner', key: 'body' }))?.props.backgroundColor).toBe(SKINS[1]?.body)
+  expect((await ui.find({ in: 'waiting-game', key: 'body' }))?.props.backgroundColor).toBe(SKINS[1]?.body)
   await ui.unmount()
 
-  const stats = await $.command.run({ command: 'runner', args: 'stats' } as never)
+  const stats = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
   expect(stats.text).toContain('wearing Mint')
 })
 
-test('/runner off hides the band while Claude works, /runner on brings it back', async ($, on) => {
+test('/waiting-game off hides the band while Claude works, /waiting-game on brings it back', async ($, on) => {
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'runner' } }))
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-  const off = await $.command.run({ command: 'runner', args: 'off' } as never)
-  expect(off.text).toContain('Runner off')
+  const off = await $.command.run({ command: 'waiting-game', args: 'off' } as never)
+  expect(off.text).toContain('Waiting Game off')
   const ui = await $.ui.mount({ ...band(true), surface: 'terminal' })
   expect(await ui.find({ type: 'Client' })).toBeUndefined()
 
-  const back = await $.command.run({ command: 'runner', args: 'on' } as never)
-  expect(back.text).toContain('Runner on')
+  const back = await $.command.run({ command: 'waiting-game', args: 'on' } as never)
+  expect(back.text).toContain('Waiting Game on')
   await ui.redraw()
   expect(await ui.find({ type: 'Client' })).toBeDefined()
   await ui.unmount()
@@ -262,31 +262,31 @@ test('/runner off hides the band while Claude works, /runner on brings it back',
 test('the terminal draws a run in whole cells: hazards come, and the critter jumps', async ($, on) => {
   mock.clock(on)
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'runner' } }))
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
   const term = worldFor('terminal', 80)
   const ui = await $.ui.mount({ ...band(true), surface: 'terminal' })
-  await ui.resize({ columns: 80, rows: heightFor('terminal'), in: 'runner' })
-  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'runner' })
+  await ui.resize({ columns: 80, rows: heightFor('terminal'), in: 'waiting-game' })
+  await ui.pointer({ type: 'down', x: 5, y: 3, button: 'left', in: 'waiting-game' })
   await ui.advance(term.tickMs * 16)
-  expect(await ui.find({ in: 'runner', key: 'h1' })).toBeDefined()
+  expect(await ui.find({ in: 'waiting-game', key: 'h1' })).toBeDefined()
 
-  const topOf = async () => Number((await ui.find({ in: 'runner', key: 'critter' }))?.props.top)
+  const topOf = async () => Number((await ui.find({ in: 'waiting-game', key: 'critter' }))?.props.top)
   const ground = await topOf()
-  await ui.key({ key: 'up', in: 'runner' })
+  await ui.key({ key: 'up', in: 'waiting-game' })
   await ui.advance(term.tickMs * 6)
   expect(await topOf()).toBeLessThan(ground)
   await ui.unmount()
 })
 
 const footer = (modes: readonly string[]) =>
-  ({ plugin: 'runner', component: 'SessionMode', requestId: 'session-mode', props: { modes } }) as const
+  ({ plugin: 'waiting-game', component: 'SessionMode', requestId: 'session-mode', props: { modes } }) as const
 
 test('the footer button hides the game and shows it again, keeping the mode labels', async ($, on) => {
   mock.store(on)
-  on('command.register', () => ({ value: { command: 'runner' } }))
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   // Stands for the engine's own labels beneath the plugin.
   on('ui.render', { component: 'SessionMode' }, ($, e) => {
@@ -298,20 +298,20 @@ test('the footer button hides the game and shows it again, keeping the mode labe
   for (const surface of ['desktop', 'terminal'] as const) {
     const bar = await $.ui.mount({ ...footer(['focus']), surface })
     const game = await $.ui.mount({ ...band(true), surface })
-    expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).toContain('Game on')
-    expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).not.toContain('🎮')
+    expect((await bar.find({ type: 'Button', key: 'waiting-game-toggle' }))?.text).toContain('Game on')
+    expect((await bar.find({ type: 'Button', key: 'waiting-game-toggle' }))?.text).not.toContain('🎮')
     expect(await bar.find({ type: 'Text', text: '●' })).toBeDefined()
     expect(await bar.find({ type: 'Text', text: 'focus' })).toBeDefined()
     expect(await game.find({ type: 'Client' })).toBeDefined()
 
-    await bar.press({ key: 'runner-toggle' })
-    expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).toContain('Game off')
+    await bar.press({ key: 'waiting-game-toggle' })
+    expect((await bar.find({ type: 'Button', key: 'waiting-game-toggle' }))?.text).toContain('Game off')
     expect(await bar.find({ type: 'Text', text: '○' })).toBeDefined()
     await game.redraw()
     expect(await game.find({ type: 'Client' })).toBeUndefined()
 
-    await bar.press({ key: 'runner-toggle' })
-    expect((await bar.find({ type: 'Button', key: 'runner-toggle' }))?.text).toContain('Game on')
+    await bar.press({ key: 'waiting-game-toggle' })
+    expect((await bar.find({ type: 'Button', key: 'waiting-game-toggle' }))?.text).toContain('Game on')
     await game.redraw()
     expect(await game.find({ type: 'Client' })).toBeDefined()
     await bar.unmount()
