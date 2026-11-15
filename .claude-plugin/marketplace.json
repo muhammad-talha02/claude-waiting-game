@@ -1,0 +1,17 @@
+{
+  "name": "critter-run",
+  "owner": {
+    "name": "M Talha",
+    "url": "https://github.com/muhammad-talha02"
+  },
+  "metadata": {
+    "description": "Critter Run: a small runner game above the Claude Code prompt, to play while Claude works"
+  },
+  "plugins": [
+    {
+      "name": "runner",
+      "source": "./",
+      "description": "A runner game above the prompt while Claude works: double jumps, bugs, coins, power-ups, levels, a day-night sky and colours to unlock"
+    }
+  ]
+}

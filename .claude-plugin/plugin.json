@@ -1,0 +1,14 @@
+{
+  "name": "runner",
+  "version": "0.4.0",
+  "description": "Critter Run, a runner game above the prompt to play while Claude works: jumps and double jumps, bugs, coins, power-ups, levels, a day-night sky and colours to unlock",
+  "author": {
+    "name": "M Talha",
+    "url": "https://github.com/muhammad-talha02"
+  },
+  "repository": "https://github.com/muhammad-talha02/critter-run",
+  "homepage": "https://github.com/muhammad-talha02/critter-run",
+  "license": "MIT",
+  "keywords": ["claude-code-mods", "game", "runner", "above-prompt", "fun"],
+  "types": "./types/index.d.ts"
+}
