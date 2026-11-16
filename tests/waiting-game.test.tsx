@@ -234,6 +234,19 @@ test('the band shows the game only while Claude works, on terminal and desktop',
   await phone.unmount()
 })
 
+test('the game still shows when the surface does not say whether the band is collapsed', async $ => {
+  // The desktop app may leave isCollapsed out; a Client whose props hold
+  // undefined is refused, and the game would silently not show.
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const { isCollapsed: _, ...props } = band(true).props
+    const ui = await $.ui.mount({ ...band(true), props: props as never, surface })
+    const client = await ui.find({ type: 'Client' })
+    expect(client?.key).toBe('waiting-game')
+    expect((client?.props.props as { collapsed?: unknown } | undefined)?.collapsed).toBe(false)
+    await ui.unmount()
+  }
+})
+
 test('a click starts a run, Space jumps, and a lost run keeps the best score, the coins and the count', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)

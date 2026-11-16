@@ -216,7 +216,9 @@ export const register: Register = on => {
       columns: e.props.bodyColumns,
       surface: e.surface,
       // Folded away, the game is still drawn, so a run waits rather than ends.
-      collapsed: e.props.isCollapsed,
+      // Always a boolean: the desktop app may not send it, and a Client whose
+      // props hold `undefined` is refused, so the game would not show at all.
+      collapsed: e.props.isCollapsed === true,
     }
     return (
       <Box width="100%">

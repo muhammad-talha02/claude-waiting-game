@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2
+
+- Fixes 0.7.1 not showing at all in the Claude desktop app: the app doesn't say whether the band is collapsed, and the game was handed an empty value that Claude Code refuses to draw.
+
 ## 0.7.1
 
 - Lighter on the desktop app: the title screen redraws only when the critter blinks, the faint dot grid is gone, and on a very wide window the playing field stops at 200 columns, centred.
