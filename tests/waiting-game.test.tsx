@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine, Mounted } from 'claude-code/testing'
 
-import { act, CRITTER_W, CRITTER_X, drop, fresh, heightFor, levelFor, MAX_DESKTOP_COLUMNS, OVER_LOCK, pause, report, SKINS, speedFor, step, unlockedCount, worldFor } from '../hooks/game'
+import { act, CRITTER_W, CRITTER_X, drop, fresh, heightFor, hold, levelFor, MAX_DESKTOP_COLUMNS, OVER_LOCK, pause, report, SKINS, speedFor, step, unlockedCount, worldFor } from '../hooks/game'
 import type { GamePost, GameState, Hazard, HazardKind } from '../hooks/game'
 
 const band = (isWorking: boolean) =>
@@ -90,6 +90,20 @@ test('↓ in the air drops straight down; P pauses until P, Space or a click', (
   expect(step(paused, DESK)).toBe(paused)
   expect(pause(paused).phase).toBe('run')
   expect(act(paused).phase).toBe('run')
+})
+
+test('a pause says why: the player, Claude done, or Claude asking; going on clears it', () => {
+  const run = step(act(fresh(1)), DESK)
+  expect(pause(run).pausedFor).toBe('you')
+  expect(hold(run, 'done')).toMatchObject({ phase: 'paused', pausedFor: 'done' })
+  expect(hold(run, 'ask')).toMatchObject({ phase: 'paused', pausedFor: 'ask' })
+  // A hold only pauses: it never resumes a paused run, nor touches one not running.
+  const held = hold(run, 'done')
+  expect(hold(held, 'ask')).toBe(held)
+  const idle = fresh(1)
+  expect(hold(idle, 'done')).toBe(idle)
+  expect(act(held)).toMatchObject({ phase: 'run', pausedFor: null })
+  expect(pause(held)).toMatchObject({ phase: 'run', pausedFor: null })
 })
 
 /** A careful player: jumps so the top of the jump is over each hazard, runs under high bugs. */
@@ -268,12 +282,15 @@ test('a click starts a run, Space jumps, and a lost run keeps the best score, th
   await ui.advance(DESK.tickMs * 10)
   expect(await topOf()).toBeLessThan(ground)
 
-  // Claude finishes while the run goes on: the band stays for the run, and says so.
+  // Claude finishes while the run goes on: the run pauses, the band stays for it, and says so.
   await ui.redraw(band(false).props)
+  await ui.advance(DESK.tickMs)
   expect(await ui.find({ type: 'Client' })).toBeDefined()
   expect(await ui.find({ in: 'waiting-game', text: /Claude is done/ })).toBeDefined()
+  expect(await ui.find({ in: 'waiting-game', text: /PAUSED/ })).toBeDefined()
 
-  // No more jumps: the run ends, and the band leaves a few seconds later.
+  // Played on, with no more jumps: the run ends, and the band leaves a few seconds later.
+  await ui.key({ key: 'p', in: 'waiting-game' })
   await ui.advance(DESK.tickMs * 2000)
   expect((await ui.find({ in: 'waiting-game', text: /GAME OVER/ }))?.text).toContain('GAME OVER')
   await clock.advance(7_000)
@@ -606,5 +623,104 @@ test('on a very wide desktop window the field stops at 200 columns, centred, and
   expect(hazards.length).toBeGreaterThan(0)
   for (const b of hazards) expect(Number(b.props.marginLeft)).toBeLessThan(MAX_DESKTOP_COLUMNS)
   expect(JSON.stringify(await ui.drawn(IN)).length).toBeLessThan(100_000)
+  await ui.unmount()
+})
+
+// ── pausing for Claude ──────────────────────────────────────────────────
+
+test('Claude finishing pauses a run once; the run is kept for the next turn, and goes on at a press', async ($, on) => {
+  const clock = await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 20)
+
+  await ui.redraw(band(false).props)
+  await ui.advance(DESK.tickMs)
+  expect((await ui.find({ ...IN, text: /PAUSED/ }))?.text).toContain('Claude is done')
+  const still = await placesOn(ui, MOVING)
+  // Long after Claude is done, the paused run is still there.
+  await clock.advance(60_000)
+  await ui.advance(DESK.tickMs * 100)
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  expect(await placesOn(ui, MOVING)).toEqual(still)
+
+  // The next turn: still paused, the same run, until the player goes on.
+  await ui.redraw(band(true).props)
+  await ui.advance(DESK.tickMs * 20)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+  expect(await placesOn(ui, MOVING)).toEqual(still)
+  await ui.key({ key: ' ', ...IN })
+  await ui.advance(DESK.tickMs * 5)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  expect(await placesOn(ui, MOVING)).not.toEqual(still)
+  await ui.unmount()
+})
+
+test('a run the player goes on with while Claude is done is not paused again', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'terminal' })
+  await ui.resize({ columns: 80, rows: heightFor('terminal'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(TERM.tickMs * 2)
+  await ui.redraw(band(false).props)
+  await ui.advance(TERM.tickMs)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+  await ui.key({ key: 'p', ...IN })
+  await ui.advance(TERM.tickMs * 3)
+  await ui.redraw(band(false).props)
+  await ui.advance(TERM.tickMs * 3)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a lost run is not paused when Claude finishes: the band goes as before', async ($, on) => {
+  const clock = await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 2000)
+  expect(await ui.find({ ...IN, text: /GAME OVER/ })).toBeDefined()
+  await ui.redraw(band(false).props)
+  await ui.advance(DESK.tickMs)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  await clock.advance(7_000)
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the pause button at the top left pauses a run and resumes it, on either surface', async ($, on) => {
+  await startSession($, on)
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const world = surface === 'desktop' ? DESK : TERM
+    const ui = await $.ui.mount({ ...band(true), surface })
+    await ui.resize({ columns: 80, rows: heightFor(surface), ...IN })
+    // Before a run there is no button: a click there starts the run.
+    expect(await ui.find({ ...IN, key: 'pause' })).toBeUndefined()
+    await ui.pointer(startAt)
+    await ui.advance(world.tickMs * 2)
+    expect(await ui.find({ ...IN, key: 'pause' })).toBeDefined()
+    await ui.pointer({ type: 'down', x: 2, y: 0, button: 'left', ...IN })
+    await ui.advance(world.tickMs)
+    expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+    const lift = await ui.find({ ...IN, text: /PAUSED/ })
+    expect(lift?.text).not.toContain('Claude')
+    await ui.pointer({ type: 'down', x: 2, y: 0, button: 'left', ...IN })
+    await ui.advance(world.tickMs)
+    expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('on a wide desktop window the pause button is found at the centred field', async ($, on) => {
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop', props: { ...band(true).props, bodyColumns: 400 } })
+  await ui.resize({ columns: 400, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 2)
+  // The field (200 columns) starts at column 100.
+  await ui.pointer({ type: 'down', x: 102, y: 0, button: 'left', ...IN })
+  await ui.advance(DESK.tickMs)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
   await ui.unmount()
 })

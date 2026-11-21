@@ -219,6 +219,7 @@ export const register: Register = on => {
       // Always a boolean: the desktop app may not send it, and a Client whose
       // props hold `undefined` is refused, so the game would not show at all.
       collapsed: e.props.isCollapsed === true,
+      asks: 0,
     }
     return (
       <Box width="100%">
