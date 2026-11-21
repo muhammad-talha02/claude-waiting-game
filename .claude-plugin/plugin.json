@@ -1,6 +1,6 @@
 {
   "name": "waiting-game",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Claude Waiting Game: bored while Claude works? A runner game above the Claude Code prompt, with jumps and double jumps, bugs, coins, power-ups, levels and colours to unlock, on a plain editor-dark panel",
   "author": {
     "name": "M Talha",

@@ -52,7 +52,8 @@ To keep it installed but hide the game, run `/waiting-game off`.
 
 ## How it works
 
-- The game shows only while Claude is working, and stays until a run you're playing ends. If Claude finishes mid-run, a green **✓ Claude is done** chip appears and you can finish the run.
+- The game shows only while Claude is working, and stays until a run you're playing ends.
+- When Claude finishes its turn, or stops to ask you something (a question or a permission prompt), a run pauses and says why. It stays paused, on screen, until you go on, even into Claude's next turn. Press P, Space or click to carry on.
 - Click the game to start. Keys reach it once a click has given it the focus; Esc gives the focus back to the prompt.
 - Collapse the band and a run pauses until you're back; press P, Space or click to go on.
 
@@ -62,7 +63,7 @@ To keep it installed but hide the game, run `/waiting-game off`.
 | --- | --- |
 | Click, Space, ↑, w, k, Enter | Start, jump, and jump again in the air (double jump) |
 | ↓, s, j | Drop straight down from a jump |
-| P | Pause and resume |
+| P, or the ‖ button at the top left | Pause and resume |
 | C | Change the critter's colour (from the ones you've unlocked) |
 
 ## The game

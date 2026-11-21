@@ -31,6 +31,11 @@ export type GameProps = {
   surface: Surface
   /** Whether the band is folded away: a run waits, and nothing is drawn. */
   collapsed: boolean
+  /**
+   * How many times Claude has stopped to ask the person something (a question,
+   * a permission prompt) this session: each new one pauses a run.
+   */
+  asks: number
 }
 export type HazardKind = 'rock' | 'boulder' | 'crystal' | 'bugLow' | 'bugMid' | 'bugHigh'
 export type Hazard = {
@@ -51,6 +56,8 @@ export type Orb = { id: number; kind: PowerKind; x: number; y: number }
 export type Particle = { id: number; x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; fall: number }
 export type Popup = { id: number; x: number; y: number; text: string; color: string; life: number }
 export type Phase = 'idle' | 'run' | 'paused' | 'over'
+/** Who paused a run: the player, Claude finishing its turn, or Claude asking the person something. */
+export type PauseReason = 'you' | 'done' | 'ask'
 export type GameState = {
   phase: Phase
   /** Height of the critter's feet above the ground, in pixels. */
@@ -98,6 +105,8 @@ export type GameState = {
   game: number
   /** Runs started in this game: the number of the one on screen. */
   run: number
+  /** Why a paused run is paused; null otherwise. */
+  pausedFor: PauseReason | null
 }
 /**
  * What the game tells the hooks module, the same whole picture in every post:
@@ -249,6 +258,7 @@ export function fresh(seed: number): GameState {
     skin: null,
     game: 0,
     run: 0,
+    pausedFor: null,
   }
 }
 
@@ -589,7 +599,7 @@ function start(s: GameState, ctx: StartContext): GameState {
 export function act(s: GameState, ctx: StartContext = { best: 0, coins: 0 }): GameState {
   if (s.phase === 'idle') return start(s, ctx)
   if (s.phase === 'over') return s.overT >= OVER_LOCK ? start(s, ctx) : s
-  if (s.phase === 'paused') return { ...s, phase: 'run' }
+  if (s.phase === 'paused') return { ...s, phase: 'run', pausedFor: null }
   if (s.lift === 0 && s.vy === 0) return { ...s, vy: JUMP_V, jumps: 1, squash: 0 }
   if (s.jumps < 2) {
     const id = s.nextId
@@ -616,9 +626,26 @@ export function drop(s: GameState): GameState {
   return s.phase === 'run' && s.lift > 0 && s.vy > DROP_V ? { ...s, vy: DROP_V } : s
 }
 
-/** P: pause a run, or resume it. */
+/** P or the pause button: pause a run, or resume it. */
 export function pause(s: GameState): GameState {
-  return s.phase === 'run' ? { ...s, phase: 'paused' } : s.phase === 'paused' ? { ...s, phase: 'run' } : s
+  return s.phase === 'run' ? { ...s, phase: 'paused', pausedFor: 'you' } : s.phase === 'paused' ? { ...s, phase: 'run', pausedFor: null } : s
+}
+
+/** Pause a running run for a reason; never resumes one, nor touches a game not running. */
+export function hold(s: GameState, why: PauseReason): GameState {
+  return s.phase === 'run' ? { ...s, phase: 'paused', pausedFor: why } : s
+}
+
+/** The pause button's columns, from the field's left edge, on its top row. */
+const PAUSE_BUTTON_COLS = 5
+const PAUSE_GLYPH = '‖'
+const RESUME_GLYPH = '▸'
+
+/** The column where the field starts: on a desktop window wider than the field, it is centred. */
+export function fieldLeft(surface: Surface, columns: number): number {
+  const cols = Math.max(24, columns)
+  const field = fieldColumns(surface, cols)
+  return field < cols ? Math.floor((cols - field) / 2) : 0
 }
 
 /** What the game posts, as it stands now: see GamePost. */
@@ -700,7 +727,7 @@ function scaleFor(s: GameState): [number, number] {
 const props = new WeakMap<object, GameProps>()
 
 function propsOf(surface: ClientSurface<GameState>): GameProps {
-  return props.get(surface) ?? { best: 0, coins: 0, skin: 0, working: true, columns: 60, surface: 'terminal', collapsed: false }
+  return props.get(surface) ?? { best: 0, coins: 0, skin: 0, working: true, columns: 60, surface: 'terminal', collapsed: false, asks: 0 }
 }
 
 function worldOf(surface: ClientSurface<GameState>): World {
@@ -758,12 +785,22 @@ function wire(surface: ClientSurface<GameState>) {
   }
   // Frames gone by on the state as it stands, with nothing new to draw.
   let held = 0
+  // What Claude was doing at the last frame: a run pauses only when this
+  // changes, so a player who goes on while Claude is done is not paused again.
+  let wasWorking = propsOf(surface).working
+  let askedBefore = propsOf(surface).asks
   surface.every(worldOf(surface).tickMs, () => {
+    const p = propsOf(surface)
+    const asked = p.asks !== askedBefore
+    const finished = wasWorking && !p.working
+    wasWorking = p.working
+    askedBefore = p.asks
+    if (surface.state && (asked || finished)) apply(surface, hold(surface.state, asked ? 'ask' : 'done'))
     const s = surface.state
     if (!s) return
     if (!live()) {
       // Folded away: a run waits for the player, and nothing is drawn.
-      if (s.phase === 'run') apply(surface, pause(s))
+      if (s.phase === 'run') apply(surface, hold(s, 'you'))
       return
     }
     const next = step(s, worldOf(surface), held)
@@ -772,7 +809,11 @@ function wire(surface: ClientSurface<GameState>) {
   })
   surface.onPointer(e => {
     if (!live() || e.type !== 'down' || (e.button ?? 'left') !== 'left') return
-    apply(surface, act(surface.state ?? fresh(Date.now()), ctx()))
+    const s = surface.state ?? fresh(Date.now())
+    const p = propsOf(surface)
+    const x = e.x - fieldLeft(p.surface, surface.columns || p.columns)
+    const onButton = e.y === 0 && x >= 0 && x < PAUSE_BUTTON_COLS && (s.phase === 'run' || s.phase === 'paused')
+    apply(surface, onButton ? pause(s) : act(s, ctx()))
   })
   surface.onKey(e => {
     // Ctrl and Cmd combos are the app's shortcuts, not the game's keys.
@@ -815,7 +856,8 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     lines.push({ text: narrow ? '↑ jump ×2 · ↓ drop · P pause · C colour' : '↑ / Space jump · again in the air for a double jump · ↓ drop · P pause · C colour', color: '#D9DEEA' })
     lines.push({ text: `★ ${best}   ● ${coinsNow}   ${skin.name}${unlockedCount(coinsNow) > 1 ? ` (${unlockedCount(coinsNow)}/${SKINS.length})` : ''}`, color: '#D9DEEA' })
   } else if (s.phase === 'paused') {
-    lines.push({ text: 'PAUSED', color: '#FFFFFF', strong: true })
+    const why = s.pausedFor === 'done' ? ' · Claude is done' : s.pausedFor === 'ask' ? ' · Claude is asking you something' : ''
+    lines.push({ text: `PAUSED${why}`, color: '#FFFFFF', strong: true })
     lines.push({ text: 'P, Space or a click to go on', color: '#D9DEEA' })
   } else if (s.phase === 'over') {
     lines.push({
@@ -838,6 +880,9 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
     </Box>
   )
   const left: RenderElement[] = []
+  const running = s.phase === 'run' || s.phase === 'paused'
+  const button = s.phase === 'paused' ? RESUME_GLYPH : PAUSE_GLYPH
+  if (running) left.push(chip('pause', button))
   if (s.phase !== 'idle') left.push(chip('lv', `LV ${s.level}`))
   if (s.shield > 0) left.push(chip('shield', `🛡 ${Math.ceil(s.shield)}`, '#BFF0FF'))
   if (s.magnet > 0) left.push(chip('magnet', `🧲 ${Math.ceil(s.magnet)}`, '#FFC9C9'))
@@ -1102,6 +1147,11 @@ const Game: ClientModule<GameProps, GameState> = (p, surface) => {
         )}
         {words}
         <Box key="hudl" position="absolute" top={0} left={0} flexDirection="row" columnGap={1}>
+          {running ? (
+            <Box key="pause">
+              <Text weight="bold">{` ${button} `}</Text>
+            </Box>
+          ) : null}
           {s.phase !== 'idle' ? <Text dimColor>{`LV ${s.level}`}</Text> : null}
           {s.shield > 0 ? <Text color="#4FC3F7">{`SHIELD ${Math.ceil(s.shield)}`}</Text> : null}
           {s.magnet > 0 ? <Text color="#EF5350">{`MAGNET ${Math.ceil(s.magnet)}`}</Text> : null}

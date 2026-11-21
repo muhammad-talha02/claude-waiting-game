@@ -15,6 +15,7 @@ const enabled = atom({ plugin: 'waiting-game', key: 'enabled' } as const, true)
 const coins = atom({ plugin: 'waiting-game', key: 'coins' } as const, 0)
 const runs = atom({ plugin: 'waiting-game', key: 'runs' } as const, 0)
 const skin = atom({ plugin: 'waiting-game', key: 'skin' } as const, 0)
+const asks = atom({ plugin: 'waiting-game', key: 'asks' } as const, 0)
 
 const BEST_KEY = 'best'
 const ENABLED_KEY = 'enabled'
@@ -69,6 +70,11 @@ async function pickSkin($: EngineInterface, n: number) {
     saveSkin = null
     void $.store.set(SKIN_KEY, k).catch(() => undefined)
   })
+}
+
+/** Claude stopped to ask the person something: one more, which pauses a run. */
+async function asked($: EngineInterface) {
+  await update($, asks, n => (n + 1) % MAX_COUNT)
 }
 
 async function stats($: EngineInterface): Promise<string> {
@@ -172,6 +178,19 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Claude stops to ask the person something: a permission prompt, or a
+  // question of its own. Each one is counted, and the game pauses a run when
+  // the count changes, so keys meant for the dialog never cost a run. Both
+  // hooks only listen: what is asked and what is answered pass on unchanged.
+  on('classic.PermissionRequest', async ($, e, next) => {
+    await asked($)
+    return next(e)
+  })
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    await asked($)
+    return next(e)
+  })
+
   // A game that failed has stopped: the band no longer waits on its run.
   on('ui.fault', async ($, e, next) => {
     if (e.component === 'AbovePrompt' && e.element === 'waiting-game') {
@@ -219,6 +238,7 @@ export const register: Register = on => {
       // Always a boolean: the desktop app may not send it, and a Client whose
       // props hold `undefined` is refused, so the game would not show at all.
       collapsed: e.props.isCollapsed === true,
+      asks: await read($, asks),
     }
     return (
       <Box width="100%">
