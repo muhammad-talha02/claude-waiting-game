@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- A run pauses by itself when Claude finishes its turn or stops to ask you something (a question or a permission prompt), and the pause screen says why. Keys meant for a dialog no longer cost you a run.
+- A paused run is kept until you go on, even into Claude's next turn. Going on while Claude is done doesn't pause it again.
+- A pause button (‖) at the top left of the field pauses and resumes a run, on the desktop and in the terminal.
+
 ## 0.7.2
 
 - Fixes 0.7.1 not showing at all in the Claude desktop app: the app doesn't say whether the band is collapsed, and the game was handed an empty value that Claude Code refuses to draw.
