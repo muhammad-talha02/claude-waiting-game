@@ -724,3 +724,43 @@ test('on a wide desktop window the pause button is found at the centred field', 
   expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('Claude asking for a permission pauses a run, and the answer is left to the person', async ($, on) => {
+  // Stands for the person's dialog beneath the plugins: it answers nothing here.
+  on('classic.PermissionRequest', () => ({}))
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  await ui.resize({ columns: 80, rows: heightFor('desktop'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(DESK.tickMs * 5)
+  const result = await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'ls' } })
+  // The game decides nothing about the permission.
+  expect((result as { decision?: unknown }).decision).toBeUndefined()
+  await ui.advance(DESK.tickMs)
+  expect((await ui.find({ ...IN, text: /PAUSED/ }))?.text).toContain('Claude is asking you something')
+  // Going on, then a second ask: paused again.
+  await ui.key({ key: 'p', ...IN })
+  await ui.advance(DESK.tickMs * 3)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  await $.classic.PermissionRequest({ tool_name: 'Edit', tool_input: {} })
+  await ui.advance(DESK.tickMs)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Claude putting a question to the person pauses a run; other tools do not', async ($, on) => {
+  // Stands for the tools themselves beneath the plugins.
+  on('tool.call', () => ({ result: {} }))
+  await startSession($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'terminal' })
+  await ui.resize({ columns: 80, rows: heightFor('terminal'), ...IN })
+  await ui.pointer(startAt)
+  await ui.advance(TERM.tickMs * 2)
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  await ui.advance(TERM.tickMs)
+  expect(await ui.find({ ...IN, text: /PAUSED/ })).toBeUndefined()
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+  await ui.advance(TERM.tickMs)
+  expect((await ui.find({ ...IN, text: /PAUSED/ }))?.text).toContain('Claude is asking you something')
+  await ui.unmount()
+})

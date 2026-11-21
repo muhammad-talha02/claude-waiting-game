@@ -13,6 +13,8 @@ declare module 'claude-code' {
       runs: number
       /** The critter's colour, an index into the game's SKINS. */
       skin: number
+      /** Times Claude has stopped to ask the person something this session: each new one pauses a run. */
+      asks: number
     }
   }
 }
