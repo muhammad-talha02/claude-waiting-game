@@ -161,18 +161,23 @@ export const register: Register = on => {
       stopLinger()
       await update($, playing, () => true)
     } else if (firstEnd(data.game, data.run)) {
-      const score = count(data.score)
-      const top = await update($, best, b => Math.max(b, score))
-      if (score > 0 && score >= top) await $.store.set(BEST_KEY, top)
-      const total = await update($, coins, c => Math.min(MAX_COUNT, c + count(data.coins)))
-      await $.store.set(COINS_KEY, total)
-      const played = await update($, runs, r => Math.min(MAX_COUNT, r + 1))
-      await $.store.set(RUNS_KEY, played)
+      // The band's exit is set first, so a save that fails cannot keep it on screen.
       stopLinger()
       linger = $.clock.after(LINGER_MS, () => {
         linger = null
         void update($, playing, () => false)
       })
+      // Another session may have saved since this one started: merge, never overwrite.
+      const stored = async (key: string) => count(await $.store.get(key).catch(() => undefined))
+      const save = (key: string, value: number) => $.store.set(key, value).catch(() => undefined)
+      const score = count(data.score)
+      const [sBest, sCoins, sRuns] = [await stored(BEST_KEY), await stored(COINS_KEY), await stored(RUNS_KEY)]
+      const top = await update($, best, b => Math.max(b, sBest, score))
+      if (top > sBest) await save(BEST_KEY, top)
+      const total = await update($, coins, c => Math.min(MAX_COUNT, Math.max(c, sCoins) + count(data.coins)))
+      await save(COINS_KEY, total)
+      const played = await update($, runs, r => Math.min(MAX_COUNT, Math.max(r, sRuns) + 1))
+      await save(RUNS_KEY, played)
     }
     if (data.skin !== null) await pickSkin($, data.skin)
     return next(e)

@@ -764,3 +764,62 @@ test('Claude putting a question to the person pauses a run; other tools do not',
   expect((await ui.find({ ...IN, text: /PAUSED/ }))?.text).toContain('Claude is asking you something')
   await ui.unmount()
 })
+
+// ── saving ──────────────────────────────────────────────────────────────
+
+/** A store of the test's own: a test can save as another session would, or make saving fail. */
+function ownStore(on: On, saved: Record<string, unknown> = {}) {
+  const store = new Map<string, unknown>(Object.entries(saved))
+  const control = { refuse: false }
+  on('store.get', (_, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_, e) => {
+    if (control.refuse) throw new Error('disk full')
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  return { store, control }
+}
+
+async function startWithOwnStore($: Engine, on: On) {
+  const clock = mock.clock(on)
+  on('command.register', () => ({ value: { command: 'waiting-game' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  return clock
+}
+
+test('a run that ends is added to what another session saved meanwhile, never written over it', async ($, on) => {
+  const { store } = ownStore(on)
+  await startWithOwnStore($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  // Another session saves after this one started.
+  store.set('best', 500)
+  store.set('coins', 100)
+  store.set('runs', 10)
+  await ui.post({ game: 3, run: 1, phase: 'over', score: 7, coins: 2, skin: null }, IN)
+  expect([store.get('best'), store.get('coins'), store.get('runs')]).toEqual([500, 102, 11])
+  // A run that beats the saved best still saves it.
+  await ui.post({ game: 3, run: 2, phase: 'over', score: 900, coins: 0, skin: null }, IN)
+  expect([store.get('best'), store.get('coins'), store.get('runs')]).toEqual([900, 102, 12])
+  await ui.unmount()
+  const stats = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
+  expect(stats.text).toContain('Best 900 · 102 coins · 12 runs')
+})
+
+test('a store that refuses its writes as a run ends still lets the band go, and the colour pick through', async ($, on) => {
+  const { control } = ownStore(on)
+  const clock = await startWithOwnStore($, on)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  // A run is on, then Claude is done: the band stays only for the run.
+  await ui.post({ game: 5, run: 1, phase: 'run', score: 0, coins: 0, skin: null }, IN)
+  await ui.redraw(band(false).props)
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  // The run is lost while the store will not save (40 coins open Mint, picked in the same post).
+  control.refuse = true
+  await ui.post({ game: 5, run: 1, phase: 'over', score: 3, coins: 40, skin: 1 }, IN)
+  await clock.advance(7_000)
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await ui.unmount()
+  const stats = await $.command.run({ command: 'waiting-game', args: 'stats' } as never)
+  expect(stats.text).toContain('wearing Mint')
+})
